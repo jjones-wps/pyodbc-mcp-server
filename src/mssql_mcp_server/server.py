@@ -245,7 +245,7 @@ def ReadData(query: str, max_rows: int = 100) -> str:
             if i >= max_rows:
                 break
             # Convert all values to strings for JSON serialization
-            row_dict = {}
+            row_dict: dict[str, str | None] = {}
             for col, val in zip(columns, row, strict=True):
                 if val is None:
                     row_dict[col] = None
