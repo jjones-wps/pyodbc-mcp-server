@@ -26,9 +26,8 @@ Author: Jack Jones
 License: MIT
 """
 
-import os
 import json
-from typing import Optional
+import os
 
 import pyodbc
 from fastmcp import FastMCP
@@ -66,7 +65,7 @@ def get_connection() -> pyodbc.Connection:
 
 
 @mcp.tool()
-def ListTables(schema_filter: Optional[str] = None) -> str:
+def ListTables(schema_filter: str | None = None) -> str:
     """
     Lists all tables in the SQL Server database.
 
@@ -226,7 +225,7 @@ def ReadData(query: str, max_rows: int = 100) -> str:
                 break
             # Convert all values to strings for JSON serialization
             row_dict = {}
-            for col, val in zip(columns, row):
+            for col, val in zip(columns, row, strict=True):
                 if val is None:
                     row_dict[col] = None
                 elif isinstance(val, (bytes, bytearray)):
@@ -255,7 +254,7 @@ def ReadData(query: str, max_rows: int = 100) -> str:
 
 
 @mcp.tool()
-def ListViews(schema_filter: Optional[str] = None) -> str:
+def ListViews(schema_filter: str | None = None) -> str:
     """
     Lists all views in the SQL Server database.
 

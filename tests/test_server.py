@@ -1,8 +1,5 @@
 """Tests for the MSSQL MCP Server."""
 
-import json
-import pytest
-
 
 class TestSecurityFiltering:
     """Tests for SQL query security filtering."""
