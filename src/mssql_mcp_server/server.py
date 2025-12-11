@@ -199,10 +199,11 @@ async def ListTables(schema_filter: str | None = None) -> str:
     logger.debug(f"ListTables called with schema_filter={schema_filter}")
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _query() -> list[str]:
+    def _query() -> list[str]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
             query = """
                 SELECT TABLE_SCHEMA, TABLE_NAME
@@ -220,26 +221,26 @@ async def ListTables(schema_filter: str | None = None) -> str:
             for row in cursor.fetchall():
                 tables.append(f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}")
             return tables
+        finally:
+            pool.return_connection(conn)
 
-        tables = await run_in_thread(_query)
+    tables = await run_in_thread(_query)
 
-        result: dict[str, Any] = {
-            "database": MSSQL_DATABASE,
-            "server": MSSQL_SERVER,
-            "table_count": len(tables),
-            "tables": tables[:500],
-        }
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "table_count": len(tables),
+        "tables": tables[:500],
+    }
 
-        if len(tables) > 500:
-            result["note"] = (
-                f"Showing first 500 of {len(tables)} tables. "
-                "Use schema_filter to narrow results."
-            )
+    if len(tables) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(tables)} tables. "
+            "Use schema_filter to narrow results."
+        )
 
-        logger.debug(f"Found {len(tables)} tables")
-        return json.dumps(result, indent=2)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    logger.debug(f"Found {len(tables)} tables")
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
@@ -256,16 +257,18 @@ async def DescribeTable(table_name: str) -> str:
     logger.debug(f"DescribeTable called for {table_name}")
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
-        # Parse schema.table format
-        if "." in table_name:
-            schema, table = table_name.split(".", 1)
-        else:
-            schema = "dbo"
-            table = table_name
 
-        def _query() -> list[dict[str, Any]]:
+    # Parse schema.table format
+    if "." in table_name:
+        schema, table = table_name.split(".", 1)
+    else:
+        schema = "dbo"
+        table = table_name
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
             query = """
                 SELECT
@@ -298,24 +301,24 @@ async def DescribeTable(table_name: str) -> str:
                     col["default"] = row.COLUMN_DEFAULT
                 columns.append(col)
             return columns
+        finally:
+            pool.return_connection(conn)
 
-        columns = await run_in_thread(_query)
+    columns = await run_in_thread(_query)
 
-        if not columns:
-            return json.dumps(
-                {"error": f"Table '{table_name}' not found or has no columns."}
-            )
+    if not columns:
+        return json.dumps(
+            {"error": f"Table '{table_name}' not found or has no columns."}
+        )
 
-        result = {
-            "table": f"{schema}.{table}",
-            "column_count": len(columns),
-            "columns": columns,
-        }
+    result = {
+        "table": f"{schema}.{table}",
+        "column_count": len(columns),
+        "columns": columns,
+    }
 
-        logger.debug(f"Found {len(columns)} columns for {table_name}")
-        return json.dumps(result, indent=2)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    logger.debug(f"Found {len(columns)} columns for {table_name}")
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
@@ -377,10 +380,11 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
     max_rows = min(max_rows, 1000)
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _execute() -> tuple[list[str], list[dict[str, str | None]]]:
+    def _execute() -> tuple[list[str], list[dict[str, str | None]]]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute(query)
 
@@ -403,29 +407,30 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
                         row_dict[col] = str(val)
                 rows.append(row_dict)
             return columns, rows
+        finally:
+            pool.return_connection(conn)
 
+    try:
         columns, rows = await run_in_thread(_execute)
-
-        result: dict[str, Any] = {
-            "columns": columns,
-            "row_count": len(rows),
-            "max_rows": max_rows,
-            "data": rows,
-        }
-
-        if len(rows) == max_rows:
-            result["note"] = (
-                f"Results limited to {max_rows} rows. "
-                "Increase max_rows or add WHERE clause."
-            )
-
-        logger.debug(f"Query returned {len(rows)} rows")
-        return json.dumps(result, indent=2)
     except pyodbc.Error as e:
         logger.error(f"Database error: {e!s}")
         return json.dumps({"error": f"Database Error: {e!s}"})
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+
+    result: dict[str, Any] = {
+        "columns": columns,
+        "row_count": len(rows),
+        "max_rows": max_rows,
+        "data": rows,
+    }
+
+    if len(rows) == max_rows:
+        result["note"] = (
+            f"Results limited to {max_rows} rows. "
+            "Increase max_rows or add WHERE clause."
+        )
+
+    logger.debug(f"Query returned {len(rows)} rows")
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
@@ -442,10 +447,11 @@ async def ListViews(schema_filter: str | None = None) -> str:
     logger.debug(f"ListViews called with schema_filter={schema_filter}")
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _query() -> list[str]:
+    def _query() -> list[str]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
             query = """
                 SELECT TABLE_SCHEMA, TABLE_NAME
@@ -462,26 +468,26 @@ async def ListViews(schema_filter: str | None = None) -> str:
             for row in cursor.fetchall():
                 views.append(f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}")
             return views
+        finally:
+            pool.return_connection(conn)
 
-        views = await run_in_thread(_query)
+    views = await run_in_thread(_query)
 
-        result: dict[str, Any] = {
-            "database": MSSQL_DATABASE,
-            "server": MSSQL_SERVER,
-            "view_count": len(views),
-            "views": views[:500],
-        }
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "view_count": len(views),
+        "views": views[:500],
+    }
 
-        if len(views) > 500:
-            result["note"] = (
-                f"Showing first 500 of {len(views)} views. "
-                "Use schema_filter to narrow results."
-            )
+    if len(views) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(views)} views. "
+            "Use schema_filter to narrow results."
+        )
 
-        logger.debug(f"Found {len(views)} views")
-        return json.dumps(result, indent=2)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    logger.debug(f"Found {len(views)} views")
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
@@ -497,17 +503,19 @@ async def GetTableRelationships(table_name: str) -> str:
     """
     logger.debug(f"GetTableRelationships called for {table_name}")
 
-    pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
-        # Parse schema.table format
-        if "." in table_name:
-            schema, table = table_name.split(".", 1)
-        else:
-            schema = "dbo"
-            table = table_name
+    # Parse schema.table format
+    if "." in table_name:
+        schema, table = table_name.split(".", 1)
+    else:
+        schema = "dbo"
+        table = table_name
 
-        def _query() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    pool = get_pool()
+
+    def _query() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
 
             # Get outgoing FKs (this table references others)
@@ -557,23 +565,23 @@ async def GetTableRelationships(table_name: str) -> str:
                 for row in cursor.fetchall()
             ]
             return outgoing, incoming
+        finally:
+            pool.return_connection(conn)
 
-        outgoing, incoming = await run_in_thread(_query)
+    outgoing, incoming = await run_in_thread(_query)
 
-        result = {
-            "table": f"{schema}.{table}",
-            "outgoing_relationships": outgoing,
-            "incoming_relationships": incoming,
-            "outgoing_count": len(outgoing),
-            "incoming_count": len(incoming),
-        }
+    result = {
+        "table": f"{schema}.{table}",
+        "outgoing_relationships": outgoing,
+        "incoming_relationships": incoming,
+        "outgoing_count": len(outgoing),
+        "incoming_count": len(incoming),
+    }
 
-        logger.debug(
-            f"Found {len(outgoing)} outgoing, {len(incoming)} incoming relationships"
-        )
-        return json.dumps(result, indent=2)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    logger.debug(
+        f"Found {len(outgoing)} outgoing, {len(incoming)} incoming relationships"
+    )
+    return json.dumps(result, indent=2)
 
 
 # =============================================================================
@@ -591,10 +599,11 @@ async def list_tables_resource() -> str:
     logger.debug("Accessing tables resource")
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _query() -> list[str]:
+    def _query() -> list[str]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT TABLE_SCHEMA, TABLE_NAME
@@ -603,11 +612,11 @@ async def list_tables_resource() -> str:
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             """)
             return [f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}" for row in cursor.fetchall()]
+        finally:
+            pool.return_connection(conn)
 
-        tables = await run_in_thread(_query)
-        return "\n".join(tables)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    tables = await run_in_thread(_query)
+    return "\n".join(tables)
 
 
 @mcp.resource("mssql://views")
@@ -620,10 +629,11 @@ async def list_views_resource() -> str:
     logger.debug("Accessing views resource")
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _query() -> list[str]:
+    def _query() -> list[str]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT TABLE_SCHEMA, TABLE_NAME
@@ -631,11 +641,11 @@ async def list_views_resource() -> str:
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             """)
             return [f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}" for row in cursor.fetchall()]
+        finally:
+            pool.return_connection(conn)
 
-        views = await run_in_thread(_query)
-        return "\n".join(views)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    views = await run_in_thread(_query)
+    return "\n".join(views)
 
 
 @mcp.resource("mssql://schema/{schema_name}")
@@ -651,10 +661,11 @@ async def list_schema_tables_resource(schema_name: str) -> str:
     logger.debug(f"Accessing schema resource for {schema_name}")
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _query() -> list[str]:
+    def _query() -> list[str]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -666,11 +677,11 @@ async def list_schema_tables_resource(schema_name: str) -> str:
                 (schema_name,),
             )
             return [row.TABLE_NAME for row in cursor.fetchall()]
+        finally:
+            pool.return_connection(conn)
 
-        tables = await run_in_thread(_query)
-        return "\n".join(tables)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    tables = await run_in_thread(_query)
+    return "\n".join(tables)
 
 
 @mcp.resource("mssql://table/{table_name}/preview")
@@ -693,10 +704,11 @@ async def table_preview_resource(table_name: str) -> str:
         table = table_name
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _query() -> dict[str, Any]:
+    def _query() -> dict[str, Any]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
 
             # Get column info
@@ -738,11 +750,11 @@ async def table_preview_resource(table_name: str) -> str:
                 "preview_rows": len(rows),
                 "data": rows,
             }
+        finally:
+            pool.return_connection(conn)
 
-        result = await run_in_thread(_query)
-        return json.dumps(result, indent=2)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    result = await run_in_thread(_query)
+    return json.dumps(result, indent=2)
 
 
 @mcp.resource("mssql://info")
@@ -755,10 +767,11 @@ async def database_info_resource() -> str:
     logger.debug("Accessing database info resource")
 
     pool = get_pool()
-    conn = await run_in_thread(pool.get_connection)
-    try:
 
-        def _query() -> dict[str, Any]:
+    def _query() -> dict[str, Any]:
+        """Execute query in single thread to maintain pyodbc thread safety."""
+        conn = pool.get_connection()
+        try:
             cursor = conn.cursor()
 
             # Get table count
@@ -789,11 +802,11 @@ async def database_info_resource() -> str:
                 "view_count": view_count,
                 "schemas": schemas,
             }
+        finally:
+            pool.return_connection(conn)
 
-        result = await run_in_thread(_query)
-        return json.dumps(result, indent=2)
-    finally:
-        await run_in_thread(pool.return_connection, conn)
+    result = await run_in_thread(_query)
+    return json.dumps(result, indent=2)
 
 
 def main() -> None:
