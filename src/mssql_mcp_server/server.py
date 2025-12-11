@@ -16,8 +16,14 @@ Features:
 - Security filtering: Blocks INSERT, UPDATE, DELETE, DROP, etc.
 - Row limiting: Prevents accidental large result sets
 - Async non-blocking architecture
-- Connection pooling via lifespan management
+- Per-request connections (thread-safe by design)
 - MCP Resources for schema discovery
+
+Thread Safety:
+pyodbc reports threadsafety=1 (PEP 249), meaning threads may share the module
+but not connections. This server creates fresh connections per-request within
+worker threads, ensuring connections are never shared across threads. Windows
+ODBC Driver handles connection pooling at the driver level transparently.
 
 Environment Variables:
 - MSSQL_SERVER: SQL Server hostname (default: localhost)
@@ -33,8 +39,6 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from queue import Queue
 from typing import Any
 
 import anyio
@@ -49,130 +53,50 @@ MSSQL_SERVER = os.environ.get("MSSQL_SERVER", "localhost")
 MSSQL_DATABASE = os.environ.get("MSSQL_DATABASE", "master")
 ODBC_DRIVER = os.environ.get("ODBC_DRIVER", "ODBC Driver 17 for SQL Server")
 
-# Connection pool settings
-POOL_SIZE = int(os.environ.get("MSSQL_POOL_SIZE", "5"))
+# Connection settings
 CONNECTION_TIMEOUT = int(os.environ.get("MSSQL_CONNECTION_TIMEOUT", "30"))
 
 
-@dataclass
-class ConnectionPool:
-    """Simple connection pool for pyodbc connections."""
+def create_connection() -> pyodbc.Connection:
+    """
+    Create a new database connection.
 
-    pool: "Queue[pyodbc.Connection]"
-    size: int
-    server: str
-    database: str
-    driver: str
-
-    @classmethod
-    def create(
-        cls,
-        size: int,
-        server: str,
-        database: str,
-        driver: str,
-    ) -> "ConnectionPool":
-        """Create a new connection pool with the specified size."""
-        pool: Queue[pyodbc.Connection] = Queue(maxsize=size)
-        return cls(
-            pool=pool, size=size, server=server, database=database, driver=driver
-        )
-
-    def _create_connection(self) -> pyodbc.Connection:
-        """Create a new database connection."""
-        conn_str = (
-            f"DRIVER={{{self.driver}}};"
-            f"SERVER={self.server};"
-            f"DATABASE={self.database};"
-            f"Trusted_Connection=yes;"
-            f"TrustServerCertificate=yes;"
-        )
-        return pyodbc.connect(conn_str, timeout=CONNECTION_TIMEOUT)
-
-    def get_connection(self) -> pyodbc.Connection:
-        """Get a connection from the pool or create a new one."""
-        try:
-            conn = self.pool.get_nowait()
-            # Test if connection is still valid
-            try:
-                conn.execute("SELECT 1")
-                return conn
-            except pyodbc.Error:
-                # Connection is stale, create new one
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                return self._create_connection()
-        except Exception:
-            # Pool is empty, create new connection
-            return self._create_connection()
-
-    def return_connection(self, conn: pyodbc.Connection) -> None:
-        """Return a connection to the pool."""
-        try:
-            if not self.pool.full():
-                self.pool.put_nowait(conn)
-            else:
-                conn.close()
-        except Exception:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    def close_all(self) -> None:
-        """Close all connections in the pool."""
-        while not self.pool.empty():
-            try:
-                conn = self.pool.get_nowait()
-                conn.close()
-            except Exception:
-                pass
-
-
-# Global connection pool (initialized via lifespan)
-_pool: ConnectionPool | None = None
+    Creates a fresh connection using Windows Authentication.
+    Windows ODBC Driver handles connection pooling at the driver level,
+    so we don't need application-level pooling.
+    """
+    conn_str = (
+        f"DRIVER={{{ODBC_DRIVER}}};"
+        f"SERVER={MSSQL_SERVER};"
+        f"DATABASE={MSSQL_DATABASE};"
+        f"Trusted_Connection=yes;"
+        f"TrustServerCertificate=yes;"
+    )
+    return pyodbc.connect(conn_str, timeout=CONNECTION_TIMEOUT)
 
 
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     """
-    Lifespan context manager for connection pool management.
+    Lifespan context manager for server startup/shutdown.
 
-    Initializes the connection pool on startup and cleans up on shutdown.
+    Logs server initialization and cleanup. Connection pooling is handled
+    transparently by the Windows ODBC Driver at the driver level.
     """
-    global _pool
     logger.info(
-        f"Initializing connection pool: server={MSSQL_SERVER}, database={MSSQL_DATABASE}"
+        f"Starting MSSQL MCP Server: server={MSSQL_SERVER}, database={MSSQL_DATABASE}"
     )
-    _pool = ConnectionPool.create(
-        size=POOL_SIZE,
-        server=MSSQL_SERVER,
-        database=MSSQL_DATABASE,
-        driver=ODBC_DRIVER,
+    logger.info(
+        "Using per-request connections (ODBC driver handles pooling at driver level)"
     )
 
-    yield {"pool": _pool}
+    yield {"server": MSSQL_SERVER, "database": MSSQL_DATABASE}
 
-    # Cleanup on shutdown
-    logger.info("Shutting down connection pool")
-    if _pool:
-        _pool.close_all()
-        _pool = None
+    logger.info("Shutting down MSSQL MCP Server")
 
 
 # Create FastMCP server with lifespan
 mcp: FastMCP = FastMCP("mssql-readonly", lifespan=lifespan)
-
-
-def get_pool() -> ConnectionPool:
-    """Get the global connection pool."""
-    if _pool is None:
-        raise RuntimeError(
-            "Connection pool not initialized. Server not started properly."
-        )
-    return _pool
 
 
 async def run_in_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
@@ -198,11 +122,9 @@ async def ListTables(schema_filter: str | None = None) -> str:
     """
     logger.debug(f"ListTables called with schema_filter={schema_filter}")
 
-    pool = get_pool()
-
     def _query() -> list[str]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
             query = """
@@ -222,7 +144,7 @@ async def ListTables(schema_filter: str | None = None) -> str:
                 tables.append(f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}")
             return tables
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     tables = await run_in_thread(_query)
 
@@ -256,8 +178,6 @@ async def DescribeTable(table_name: str) -> str:
     """
     logger.debug(f"DescribeTable called for {table_name}")
 
-    pool = get_pool()
-
     # Parse schema.table format
     if "." in table_name:
         schema, table = table_name.split(".", 1)
@@ -266,8 +186,8 @@ async def DescribeTable(table_name: str) -> str:
         table = table_name
 
     def _query() -> list[dict[str, Any]]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
             query = """
@@ -302,7 +222,7 @@ async def DescribeTable(table_name: str) -> str:
                 columns.append(col)
             return columns
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     columns = await run_in_thread(_query)
 
@@ -379,11 +299,9 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
     # Limit rows
     max_rows = min(max_rows, 1000)
 
-    pool = get_pool()
-
     def _execute() -> tuple[list[str], list[dict[str, str | None]]]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(query)
@@ -408,7 +326,7 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
                 rows.append(row_dict)
             return columns, rows
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     try:
         columns, rows = await run_in_thread(_execute)
@@ -446,11 +364,9 @@ async def ListViews(schema_filter: str | None = None) -> str:
     """
     logger.debug(f"ListViews called with schema_filter={schema_filter}")
 
-    pool = get_pool()
-
     def _query() -> list[str]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
             query = """
@@ -469,7 +385,7 @@ async def ListViews(schema_filter: str | None = None) -> str:
                 views.append(f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}")
             return views
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     views = await run_in_thread(_query)
 
@@ -510,11 +426,9 @@ async def GetTableRelationships(table_name: str) -> str:
         schema = "dbo"
         table = table_name
 
-    pool = get_pool()
-
     def _query() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
 
@@ -566,7 +480,7 @@ async def GetTableRelationships(table_name: str) -> str:
             ]
             return outgoing, incoming
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     outgoing, incoming = await run_in_thread(_query)
 
@@ -598,11 +512,9 @@ async def list_tables_resource() -> str:
     """
     logger.debug("Accessing tables resource")
 
-    pool = get_pool()
-
     def _query() -> list[str]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -613,7 +525,7 @@ async def list_tables_resource() -> str:
             """)
             return [f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}" for row in cursor.fetchall()]
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     tables = await run_in_thread(_query)
     return "\n".join(tables)
@@ -628,11 +540,9 @@ async def list_views_resource() -> str:
     """
     logger.debug("Accessing views resource")
 
-    pool = get_pool()
-
     def _query() -> list[str]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -642,7 +552,7 @@ async def list_views_resource() -> str:
             """)
             return [f"{row.TABLE_SCHEMA}.{row.TABLE_NAME}" for row in cursor.fetchall()]
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     views = await run_in_thread(_query)
     return "\n".join(views)
@@ -660,11 +570,9 @@ async def list_schema_tables_resource(schema_name: str) -> str:
     """
     logger.debug(f"Accessing schema resource for {schema_name}")
 
-    pool = get_pool()
-
     def _query() -> list[str]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(
@@ -678,7 +586,7 @@ async def list_schema_tables_resource(schema_name: str) -> str:
             )
             return [row.TABLE_NAME for row in cursor.fetchall()]
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     tables = await run_in_thread(_query)
     return "\n".join(tables)
@@ -703,11 +611,9 @@ async def table_preview_resource(table_name: str) -> str:
         schema = "dbo"
         table = table_name
 
-    pool = get_pool()
-
     def _query() -> dict[str, Any]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
 
@@ -751,7 +657,7 @@ async def table_preview_resource(table_name: str) -> str:
                 "data": rows,
             }
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     result = await run_in_thread(_query)
     return json.dumps(result, indent=2)
@@ -766,11 +672,9 @@ async def database_info_resource() -> str:
     """
     logger.debug("Accessing database info resource")
 
-    pool = get_pool()
-
     def _query() -> dict[str, Any]:
-        """Execute query in single thread to maintain pyodbc thread safety."""
-        conn = pool.get_connection()
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
         try:
             cursor = conn.cursor()
 
@@ -803,7 +707,7 @@ async def database_info_resource() -> str:
                 "schemas": schemas,
             }
         finally:
-            pool.return_connection(conn)
+            conn.close()
 
     result = await run_in_thread(_query)
     return json.dumps(result, indent=2)
