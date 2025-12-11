@@ -1,4 +1,4 @@
-# MSSQL MCP Server
+# pyodbc MCP Server
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides **read-only** access to Microsoft SQL Server databases using **Windows Authentication**.
 
