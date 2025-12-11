@@ -1,1 +1,1 @@
-"""Tests for mssql-mcp-server."""
+"""Tests for pyodbc-mcp-server."""

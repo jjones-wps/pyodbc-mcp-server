@@ -35,7 +35,7 @@ Built for environments where:
 - Network access to your SQL Server
 - Windows domain account with SELECT permissions on target database
 
-### Install from PyPI (Coming Soon)
+### Install from PyPI
 
 ```bash
 pip install pyodbc-mcp-server
@@ -44,8 +44,8 @@ pip install pyodbc-mcp-server
 ### Install from Source
 
 ```bash
-git clone https://github.com/yourusername/mssql-mcp-server.git
-cd mssql-mcp-server
+git clone https://github.com/jjones-wps/pyodbc-mcp-server.git
+cd pyodbc-mcp-server
 pip install -e .
 ```
 
@@ -94,7 +94,7 @@ Add to your `~/.claude.json` (or `%USERPROFILE%\.claude.json` on Windows):
       "args": [
         "/c",
         "python",
-        "C:\\path\\to\\mssql-mcp-server\\src\\mssql_mcp_server\\server.py"
+        "C:\\path\\to\\pyodbc-mcp-server\\src\\mssql_mcp_server\\server.py"
       ],
       "env": {
         "MSSQL_SERVER": "your-sql-server",

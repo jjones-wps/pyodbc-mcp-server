@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyodbc-mcp-server"
-version = "0.2.0"
+version = "0.2.1"
 description = "MCP server for read-only SQL Server access via Windows Authentication"
 readme = "README.md"
 license = "MIT"
@@ -52,9 +52,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jjones-wps/mssql-mcp-server"
-Repository = "https://github.com/jjones-wps/mssql-mcp-server"
-Issues = "https://github.com/jjones-wps/mssql-mcp-server/issues"
+Homepage = "https://github.com/jjones-wps/pyodbc-mcp-server"
+Repository = "https://github.com/jjones-wps/pyodbc-mcp-server"
+Issues = "https://github.com/jjones-wps/pyodbc-mcp-server/issues"
 
 [project.scripts]
 pyodbc-mcp-server = "mssql_mcp_server.server:main"
