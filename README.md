@@ -38,7 +38,7 @@ Built for environments where:
 ### Install from PyPI (Coming Soon)
 
 ```bash
-pip install mssql-mcp-server
+pip install pyodbc-mcp-server
 ```
 
 ### Install from Source

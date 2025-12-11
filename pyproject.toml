@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mssql-mcp-server"
+name = "pyodbc-mcp-server"
 version = "0.1.0"
 description = "MCP server for read-only SQL Server access via Windows Authentication"
 readme = "README.md"
@@ -55,7 +55,7 @@ Repository = "https://github.com/jjones-wps/mssql-mcp-server"
 Issues = "https://github.com/jjones-wps/mssql-mcp-server/issues"
 
 [project.scripts]
-mssql-mcp-server = "mssql_mcp_server.server:main"
+pyodbc-mcp-server = "mssql_mcp_server.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mssql_mcp_server"]
