@@ -1,6 +1,6 @@
-# MSSQL MCP Server Roadmap
+# pyodbc MCP Server Roadmap
 
-This document outlines the development roadmap for transforming the MSSQL MCP Server from a basic tool-only implementation to a production-ready, fully MCP-compliant server.
+This document outlines the development roadmap for transforming the pyodbc MCP Server from a basic tool-only implementation to a production-ready, fully MCP-compliant server.
 
 ## Current State (v0.1.0)
 
