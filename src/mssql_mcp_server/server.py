@@ -26,9 +26,8 @@ Author: Jack Jones
 License: MIT
 """
 
-import os
 import json
-from typing import Optional
+import os
 
 import pyodbc
 from fastmcp import FastMCP
@@ -66,7 +65,7 @@ def get_connection() -> pyodbc.Connection:
 
 
 @mcp.tool()
-def ListTables(schema_filter: Optional[str] = None) -> str:
+def ListTables(schema_filter: str | None = None) -> str:
     """
     Lists all tables in the SQL Server database.
 
@@ -99,11 +98,13 @@ def ListTables(schema_filter: Optional[str] = None) -> str:
             "database": MSSQL_DATABASE,
             "server": MSSQL_SERVER,
             "table_count": len(tables),
-            "tables": tables[:500]
+            "tables": tables[:500],
         }
 
         if len(tables) > 500:
-            result["note"] = f"Showing first 500 of {len(tables)} tables. Use schema_filter to narrow results."
+            result["note"] = (
+                f"Showing first 500 of {len(tables)} tables. Use schema_filter to narrow results."
+            )
 
         return json.dumps(result, indent=2)
     finally:
@@ -152,7 +153,7 @@ def DescribeTable(table_name: str) -> str:
             col = {
                 "name": row.COLUMN_NAME,
                 "type": row.DATA_TYPE,
-                "nullable": row.IS_NULLABLE == "YES"
+                "nullable": row.IS_NULLABLE == "YES",
             }
             if row.CHARACTER_MAXIMUM_LENGTH:
                 col["max_length"] = row.CHARACTER_MAXIMUM_LENGTH
@@ -164,12 +165,14 @@ def DescribeTable(table_name: str) -> str:
             columns.append(col)
 
         if not columns:
-            return json.dumps({"error": f"Table '{table_name}' not found or has no columns."})
+            return json.dumps(
+                {"error": f"Table '{table_name}' not found or has no columns."}
+            )
 
         result = {
             "table": f"{schema}.{table}",
             "column_count": len(columns),
-            "columns": columns
+            "columns": columns,
         }
         return json.dumps(result, indent=2)
     finally:
@@ -191,22 +194,39 @@ def ReadData(query: str, max_rows: int = 100) -> str:
     # Security: Only allow SELECT statements
     query_upper = query.strip().upper()
     if not query_upper.startswith("SELECT"):
-        return json.dumps({
-            "error": "Security Error: Only SELECT queries are allowed. This server is read-only."
-        })
+        return json.dumps(
+            {
+                "error": "Security Error: Only SELECT queries are allowed. This server is read-only."
+            }
+        )
 
     # Block dangerous keywords that could appear in subqueries or CTEs
     dangerous = [
-        "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
-        "EXEC", "EXECUTE", "TRUNCATE", "GRANT", "REVOKE", "DENY",
-        "BACKUP", "RESTORE", "SHUTDOWN", "DBCC"
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "EXEC",
+        "EXECUTE",
+        "TRUNCATE",
+        "GRANT",
+        "REVOKE",
+        "DENY",
+        "BACKUP",
+        "RESTORE",
+        "SHUTDOWN",
+        "DBCC",
     ]
     for keyword in dangerous:
         # Check for keyword as whole word (not part of column name)
         if f" {keyword} " in f" {query_upper} " or f" {keyword}(" in f" {query_upper} ":
-            return json.dumps({
-                "error": f"Security Error: Query contains forbidden keyword '{keyword}'. This server is read-only."
-            })
+            return json.dumps(
+                {
+                    "error": f"Security Error: Query contains forbidden keyword '{keyword}'. This server is read-only."
+                }
+            )
 
     # Limit rows
     max_rows = min(max_rows, 1000)
@@ -225,8 +245,8 @@ def ReadData(query: str, max_rows: int = 100) -> str:
             if i >= max_rows:
                 break
             # Convert all values to strings for JSON serialization
-            row_dict = {}
-            for col, val in zip(columns, row):
+            row_dict: dict[str, str | None] = {}
+            for col, val in zip(columns, row, strict=True):
                 if val is None:
                     row_dict[col] = None
                 elif isinstance(val, (bytes, bytearray)):
@@ -239,23 +259,23 @@ def ReadData(query: str, max_rows: int = 100) -> str:
             "columns": columns,
             "row_count": len(rows),
             "max_rows": max_rows,
-            "data": rows
+            "data": rows,
         }
 
         if len(rows) == max_rows:
-            result["note"] = f"Results limited to {max_rows} rows. Increase max_rows or add WHERE clause."
+            result["note"] = (
+                f"Results limited to {max_rows} rows. Increase max_rows or add WHERE clause."
+            )
 
         return json.dumps(result, indent=2)
     except pyodbc.Error as e:
-        return json.dumps({
-            "error": f"Database Error: {str(e)}"
-        })
+        return json.dumps({"error": f"Database Error: {str(e)}"})
     finally:
         conn.close()
 
 
 @mcp.tool()
-def ListViews(schema_filter: Optional[str] = None) -> str:
+def ListViews(schema_filter: str | None = None) -> str:
     """
     Lists all views in the SQL Server database.
 
@@ -287,11 +307,13 @@ def ListViews(schema_filter: Optional[str] = None) -> str:
             "database": MSSQL_DATABASE,
             "server": MSSQL_SERVER,
             "view_count": len(views),
-            "views": views[:500]
+            "views": views[:500],
         }
 
         if len(views) > 500:
-            result["note"] = f"Showing first 500 of {len(views)} views. Use schema_filter to narrow results."
+            result["note"] = (
+                f"Showing first 500 of {len(views)} views. Use schema_filter to narrow results."
+            )
 
         return json.dumps(result, indent=2)
     finally:
@@ -338,7 +360,7 @@ def GetTableRelationships(table_name: str) -> str:
                 "constraint": row.constraint_name,
                 "column": row.column_name,
                 "references_table": row.referenced_table,
-                "references_column": row.referenced_column
+                "references_column": row.referenced_column,
             }
             for row in cursor.fetchall()
         ]
@@ -362,7 +384,7 @@ def GetTableRelationships(table_name: str) -> str:
                 "constraint": row.constraint_name,
                 "from_table": f"{row.referencing_schema}.{row.referencing_table}",
                 "from_column": row.referencing_column,
-                "to_column": row.referenced_column
+                "to_column": row.referenced_column,
             }
             for row in cursor.fetchall()
         ]
@@ -372,7 +394,7 @@ def GetTableRelationships(table_name: str) -> str:
             "outgoing_relationships": outgoing,
             "incoming_relationships": incoming,
             "outgoing_count": len(outgoing),
-            "incoming_count": len(incoming)
+            "incoming_count": len(incoming),
         }
         return json.dumps(result, indent=2)
     finally:
