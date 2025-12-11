@@ -249,7 +249,7 @@ def ReadData(query: str, max_rows: int = 100) -> str:
             for col, val in zip(columns, row, strict=True):
                 if val is None:
                     row_dict[col] = None
-                elif isinstance(val, (bytes, bytearray)):
+                elif isinstance(val, bytes | bytearray):
                     row_dict[col] = val.hex()  # Convert binary to hex string
                 else:
                     row_dict[col] = str(val)
