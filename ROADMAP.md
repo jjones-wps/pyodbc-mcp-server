@@ -29,26 +29,28 @@ This document outlines the development roadmap for transforming the MSSQL MCP Se
 **Timeline Target**: v0.2.0
 
 ### 1.1 Async Conversion
-- [ ] Wrap synchronous pyodbc calls with `asyncer.asyncify()` or thread pool executor
-- [ ] Convert all tool functions to async
-- [ ] Add `async` context manager for database operations
+- [x] Wrap synchronous pyodbc calls with `anyio.to_thread` (used instead of asyncer)
+- [x] Convert all tool functions to async
+- [x] Add `async` context manager for database operations
 
 ### 1.2 Connection Pooling via Lifespan
-- [ ] Implement FastMCP lifespan context manager
-- [ ] Create shared connection pool initialized at startup
-- [ ] Proper cleanup on server shutdown
+- [x] Implement FastMCP lifespan context manager
+- [x] Create shared connection pool initialized at startup
+- [x] Proper cleanup on server shutdown
 - [ ] Connection health checking
 
 ### 1.3 MCP Resources Implementation
-- [ ] Add `@mcp.resource("mssql://tables")` - list all tables as resource
-- [ ] Add `@mcp.resource("mssql://{schema}/{table}")` - table preview resource
-- [ ] Add `@mcp.resource("mssql://schema/{schema}")` - schema-filtered tables
+- [x] Add `@mcp.resource("mssql://tables")` - list all tables as resource
+- [x] Add `@mcp.resource("mssql://table/{table_name}/preview")` - table preview resource
+- [x] Add `@mcp.resource("mssql://schema/{schema_name}")` - schema-filtered tables
+- [x] Add `@mcp.resource("mssql://views")` - list all views as resource
+- [x] Add `@mcp.resource("mssql://info")` - database server info
 
 ### 1.4 Context-Based Logging
-- [ ] Inject `Context` parameter into all tools
-- [ ] Add `ctx.info()`, `ctx.debug()`, `ctx.error()` calls
-- [ ] Log query execution times
-- [ ] Log connection pool status
+- [x] Add Python `logging` module integration (used instead of FastMCP Context)
+- [x] Log query execution and operations
+- [x] Log connection pool status
+- [ ] Log query execution times (TODO: add timing metrics)
 
 **Success Criteria**:
 - Server handles concurrent requests without blocking
@@ -164,8 +166,8 @@ This document outlines the development roadmap for transforming the MSSQL MCP Se
 
 | Version | Focus | Key Deliverables |
 |---------|-------|------------------|
-| v0.1.0 | Initial | Basic tools, Windows Auth (CURRENT) |
-| v0.2.0 | Foundation | Async, pooling, resources |
+| v0.1.0 | Initial | Basic tools, Windows Auth |
+| v0.2.0 | Foundation | Async, pooling, resources (CURRENT) |
 | v0.3.0 | Features | Full metadata tools, schemas |
 | v0.4.0 | Production | Tests, errors, docs |
 | v1.0.0 | Enterprise | Multi-DB, caching, metrics |
@@ -210,3 +212,4 @@ These are explicitly out of scope:
 | Date | Version | Changes |
 |------|---------|---------|
 | 2024-12-11 | 1.0 | Initial roadmap created |
+| 2024-12-11 | 1.1 | Phase 1 completed - async, pooling, resources implemented |

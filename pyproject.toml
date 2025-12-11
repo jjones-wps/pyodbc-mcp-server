@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyodbc-mcp-server"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for read-only SQL Server access via Windows Authentication"
 readme = "README.md"
 license = "MIT"
@@ -36,14 +36,16 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "fastmcp>=0.1.0",
+    "fastmcp>=2.0.0",
     "pyodbc>=5.0.0",
+    "anyio>=4.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.23.0",
     "ruff>=0.8.0",
     "mypy>=1.0.0",
     "pre-commit>=3.5.0",
@@ -95,3 +97,5 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=mssql_mcp_server --cov-report=term-missing"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
