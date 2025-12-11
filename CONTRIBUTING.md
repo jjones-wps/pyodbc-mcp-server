@@ -1,4 +1,4 @@
-# Contributing to MSSQL MCP Server
+# Contributing to pyodbc MCP Server
 
 Thank you for your interest in contributing! This document provides guidelines for contributing to the project.
 
