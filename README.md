@@ -65,6 +65,43 @@ Download and install [Microsoft ODBC Driver 17 for SQL Server](https://docs.micr
 
 ### Claude Code Configuration
 
+#### Quick Install via CLI (Recommended)
+
+The easiest way to add this MCP server to Claude Code:
+
+```bash
+claude mcp add mssql --transport stdio -e MSSQL_SERVER=your-server -e MSSQL_DATABASE=your-database -- pyodbc-mcp-server
+```
+
+**With all environment variables:**
+
+```bash
+claude mcp add mssql --transport stdio \
+  -e MSSQL_SERVER=your-sql-server \
+  -e MSSQL_DATABASE=your-database \
+  -e ODBC_DRIVER="ODBC Driver 17 for SQL Server" \
+  -- pyodbc-mcp-server
+```
+
+**Scope options:**
+
+```bash
+# User scope - available across all your projects (default)
+claude mcp add mssql --transport stdio -e MSSQL_SERVER=your-server -e MSSQL_DATABASE=your-db -- pyodbc-mcp-server
+
+# Project scope - shared with team via .mcp.json (checked into version control)
+claude mcp add mssql --transport stdio --scope project -e MSSQL_SERVER=your-server -e MSSQL_DATABASE=your-db -- pyodbc-mcp-server
+```
+
+**Verify installation:**
+
+```bash
+claude mcp list          # List all configured servers
+claude mcp get mssql     # Show details for this server
+```
+
+#### Manual Configuration (Alternative)
+
 Add to your `~/.claude.json` (or `%USERPROFILE%\.claude.json` on Windows):
 
 ```json
@@ -72,8 +109,7 @@ Add to your `~/.claude.json` (or `%USERPROFILE%\.claude.json` on Windows):
   "mcpServers": {
     "mssql": {
       "type": "stdio",
-      "command": "cmd",
-      "args": ["/c", "python", "-m", "mssql_mcp_server"],
+      "command": "pyodbc-mcp-server",
       "env": {
         "MSSQL_SERVER": "your-sql-server",
         "MSSQL_DATABASE": "your-database"
@@ -83,29 +119,11 @@ Add to your `~/.claude.json` (or `%USERPROFILE%\.claude.json` on Windows):
 }
 ```
 
-**Alternative: Direct script execution**
-
-```json
-{
-  "mcpServers": {
-    "mssql": {
-      "type": "stdio",
-      "command": "cmd",
-      "args": [
-        "/c",
-        "python",
-        "C:\\path\\to\\pyodbc-mcp-server\\src\\mssql_mcp_server\\server.py"
-      ],
-      "env": {
-        "MSSQL_SERVER": "your-sql-server",
-        "MSSQL_DATABASE": "your-database"
-      }
-    }
-  }
-}
-```
-
-> **Note for Windows users:** The `cmd /c` wrapper is required for proper stdio communication with MCP clients on Windows.
+> **Note for Windows users:** If you encounter issues, try wrapping with `cmd /c`:
+> ```json
+> "command": "cmd",
+> "args": ["/c", "pyodbc-mcp-server"],
+> ```
 
 ### Claude Desktop Configuration
 
