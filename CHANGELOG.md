@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Claude Code CLI installation instructions using `claude mcp add` (recommended method)
+- Scope options documentation (user vs project scope)
+- Server management commands (`claude mcp list`, `claude mcp get`)
+
+### Changed
+- Simplified manual configuration examples in README
+
 ## [0.2.1] - 2024-12-11
 
 ### Changed
