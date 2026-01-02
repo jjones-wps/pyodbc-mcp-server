@@ -50,6 +50,65 @@ class TestSecurityFiltering:
         # EXEC( should be detected
         assert " EXEC(" in query_upper or "EXEC(" in query_upper
 
+    def test_truncate_keyword_blocked(self):
+        """TRUNCATE queries should be blocked."""
+        query = "TRUNCATE TABLE users"
+        query_upper = query.strip().upper()
+        assert "TRUNCATE" in query_upper
+
+    def test_alter_keyword_blocked(self):
+        """ALTER queries should be blocked."""
+        query = "SELECT * FROM users; ALTER TABLE users ADD COLUMN hacked INT"
+        query_upper = query.strip().upper()
+        assert "ALTER" in query_upper
+
+    def test_exec_keyword_blocked(self):
+        """EXEC/EXECUTE queries should be blocked."""
+        query = (
+            "SELECT * FROM users WHERE id = 1; EXEC sp_executesql N'DROP TABLE users'"
+        )
+        query_upper = query.strip().upper()
+        assert "EXEC" in query_upper
+
+    def test_sp_executesql_blocked(self):
+        """sp_executesql should be blocked."""
+        query = "SELECT * FROM users; EXEC sp_executesql N'DELETE FROM users'"
+        query_upper = query.strip().upper()
+        assert "SP_EXECUTESQL" in query_upper
+
+    def test_xp_cmdshell_blocked(self):
+        """xp_cmdshell should be blocked."""
+        query = "SELECT * FROM users; EXEC xp_cmdshell 'dir'"
+        query_upper = query.strip().upper()
+        assert "XP_CMDSHELL" in query_upper
+
+    def test_comment_with_dangerous_keyword(self):
+        """Dangerous keywords in SQL comments should still be detected."""
+        query = "SELECT * FROM users -- DROP TABLE users"
+        query_upper = query.strip().upper()
+        assert "DROP" in query_upper
+
+    def test_case_insensitive_blocking(self):
+        """Dangerous keywords should be blocked regardless of case."""
+        query = "SeLeCt * FrOm UsErS; dElEtE fRoM uSeRs"
+        query_upper = query.strip().upper()
+        assert "DELETE" in query_upper
+
+    def test_multiple_statements_with_dangerous_keywords(self):
+        """Multiple statements with dangerous keywords should be detected."""
+        query = "SELECT * FROM users; DELETE FROM users; INSERT INTO users VALUES (1)"
+        query_upper = query.strip().upper()
+        assert "DELETE" in query_upper
+        assert "INSERT" in query_upper
+
+    def test_union_with_dangerous_keywords(self):
+        """UNION queries with dangerous keywords should be detected."""
+        query = (
+            "SELECT id FROM users UNION SELECT id FROM (DELETE FROM users RETURNING id)"
+        )
+        query_upper = query.strip().upper()
+        assert "DELETE" in query_upper
+
 
 class TestRowLimiting:
     """Tests for row limiting functionality."""
