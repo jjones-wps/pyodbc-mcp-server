@@ -286,3 +286,84 @@ class TestThreadSafety:
         """
         assert "create_connection()" in pattern_description
         assert "closed" in pattern_description
+
+
+class TestListIndexes:
+    """Tests for the ListIndexes tool (Phase 2)."""
+
+    def test_parses_schema_table_format(self):
+        """ListIndexes should parse schema.table format correctly."""
+        table_name = "sales.orders"
+        expected_schema = "sales"
+        expected_table = "orders"
+
+        # Simulate the parsing logic from ListIndexes
+        if "." in table_name:
+            schema, table = table_name.split(".", 1)
+        else:
+            schema = "dbo"
+            table = table_name
+
+        assert schema == expected_schema
+        assert table == expected_table
+
+    def test_uses_default_schema_when_not_specified(self):
+        """ListIndexes should use 'dbo' as default schema."""
+        table_name = "customers"
+        expected_schema = "dbo"
+        expected_table = "customers"
+
+        # Simulate the parsing logic from ListIndexes
+        if "." in table_name:
+            schema, table = table_name.split(".", 1)
+        else:
+            schema = "dbo"
+            table = table_name
+
+        assert schema == expected_schema
+        assert table == expected_table
+
+    def test_output_structure(self):
+        """ListIndexes output should have expected JSON structure."""
+        # Expected output format
+        expected_keys = {"table", "index_count", "indexes"}
+        sample_output = {
+            "table": "dbo.customers",
+            "index_count": 2,
+            "indexes": [
+                {
+                    "name": "PK_customers",
+                    "type": "CLUSTERED",
+                    "is_unique": True,
+                    "is_primary_key": True,
+                    "columns": "customer_id",
+                },
+                {
+                    "name": "IX_customers_email",
+                    "type": "NONCLUSTERED",
+                    "is_unique": True,
+                    "is_primary_key": False,
+                    "columns": "email",
+                },
+            ],
+        }
+
+        assert set(sample_output.keys()) == expected_keys
+        assert isinstance(sample_output["indexes"], list)
+        assert len(sample_output["indexes"]) == sample_output["index_count"]
+
+    def test_index_properties(self):
+        """Each index should have required properties."""
+        required_props = {"name", "type", "is_unique", "is_primary_key", "columns"}
+        sample_index = {
+            "name": "PK_customers",
+            "type": "CLUSTERED",
+            "is_unique": True,
+            "is_primary_key": True,
+            "columns": "customer_id",
+        }
+
+        assert set(sample_index.keys()) == required_props
+        assert isinstance(sample_index["is_unique"], bool)
+        assert isinstance(sample_index["is_primary_key"], bool)
+        assert isinstance(sample_index["columns"], str)

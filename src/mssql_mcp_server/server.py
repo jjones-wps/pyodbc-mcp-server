@@ -495,6 +495,75 @@ async def GetTableRelationships(table_name: str) -> str:
     return json.dumps(result, indent=2)
 
 
+@mcp.tool()
+async def ListIndexes(table_name: str) -> str:
+    """List indexes defined on a table with columns and types.
+
+    Args:
+        table_name: Table name (can include schema, e.g., 'dbo.customers')
+
+    Returns:
+        JSON string with index definitions including columns and types
+
+    """
+    logger.debug(f"ListIndexes called for {table_name}")
+
+    # Parse schema.table format
+    if "." in table_name:
+        schema, table = table_name.split(".", 1)
+    else:
+        schema = "dbo"
+        table = table_name
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    i.name AS index_name,
+                    i.type_desc AS index_type,
+                    i.is_unique,
+                    i.is_primary_key,
+                    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+                FROM sys.indexes i
+                JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE i.object_id = OBJECT_ID(?)
+                  AND i.name IS NOT NULL
+                GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
+                ORDER BY i.is_primary_key DESC, i.name
+            """
+            cursor.execute(query, (f"{schema}.{table}",))
+
+            indexes = []
+            for row in cursor.fetchall():
+                indexes.append(
+                    {
+                        "name": row.index_name,
+                        "type": row.index_type,
+                        "is_unique": bool(row.is_unique),
+                        "is_primary_key": bool(row.is_primary_key),
+                        "columns": row.columns,
+                    }
+                )
+            return indexes
+        finally:
+            conn.close()
+
+    indexes = await run_in_thread(_query)
+
+    result = {
+        "table": f"{schema}.{table}",
+        "index_count": len(indexes),
+        "indexes": indexes,
+    }
+
+    logger.debug(f"Found {len(indexes)} indexes for {table_name}")
+    return json.dumps(result, indent=2)
+
+
 # =============================================================================
 # MCP Resources
 # =============================================================================
