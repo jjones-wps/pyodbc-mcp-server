@@ -145,8 +145,7 @@ def load_from_toml(config_path: Path) -> ServerConfig:
             import tomllib as tomli  # type: ignore
         except ImportError:
             raise ImportError(
-                "TOML support requires 'tomli' package. "
-                "Install with: pip install tomli"
+                "TOML support requires 'tomli' package. Install with: pip install tomli"
             ) from None
 
     with config_path.open("rb") as f:
