@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.2 Configuration Improvements COMPLETE** - Professional configuration management system
+  - CLI argument support (`--server`, `--database`, `--driver`, `--connection-timeout`)
+  - TOML configuration file support via `--config` flag with example config file (`config.example.toml`)
+  - Configuration priority system: CLI args > Config file > Environment variables > Defaults
+  - Startup health check with database connection validation and helpful error messages
+  - `--validate-only` flag for configuration testing without starting server
+  - New modules:
+    - `src/mssql_mcp_server/config.py` - ServerConfig class, TOML loading, CLI parsing, validation (95 lines, 91.58% coverage)
+    - `src/mssql_mcp_server/health.py` - Database health checks with specific error detection (48 lines, 100% coverage)
+  - Comprehensive test coverage:
+    - `tests/test_config.py` - 31 tests for configuration management (validation, env vars, TOML files, CLI args, priority)
+    - `tests/test_health.py` - 12 tests for health checks (connection success, timeout, login failures, driver errors)
+  - **Test Results**: 173 tests passing (up from 130), 79.83% coverage (up from 77.07%)
+  - Backward compatibility maintained with environment variables (MSSQL_SERVER, MSSQL_DATABASE, ODBC_DRIVER, MSSQL_CONNECTION_TIMEOUT)
 - **Phase 3.1 Testing Infrastructure COMPLETE** - Comprehensive test suite with 77% coverage
   - `tests/conftest.py` with mock pyodbc fixtures (MockRow, mock_cursor, mock_connection)
   - Sample data fixtures for all 11 tools (tables, columns, indexes, constraints, procedures, functions, triggers, FKs)
@@ -42,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 2 implementation plan document (docs/PHASE_2_PLAN.md)
 
 ### Changed
+- Server now loads configuration on startup via `load_config()` with CLI argument support
+- `main()` function performs health check before starting server
+- `create_connection()` uses global config when available, falling back to legacy environment variables
+- CLI args now use `is not None` checks to allow empty string values (important for validation testing)
+- **Dependencies**: Added `tomli>=2.0.0` for TOML config file support (Python <3.11; stdlib tomllib used for 3.11+)
 - Coverage threshold adjusted to 13% (from 15%) to accommodate Phase 2 feature growth
 - CI workflow updated to use 13% coverage threshold
 - `DescribeTable` tool now queries INFORMATION_SCHEMA.KEY_COLUMN_USAGE for primary keys

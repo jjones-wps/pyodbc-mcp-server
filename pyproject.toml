@@ -39,6 +39,7 @@ dependencies = [
     "fastmcp>=2.0.0",
     "pyodbc>=5.0.0",
     "anyio>=4.0.0",
+    "tomli>=2.0.0; python_version<'3.11'",  # TOML config file support
 ]
 
 [project.optional-dependencies]

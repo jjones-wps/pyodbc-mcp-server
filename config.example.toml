@@ -1,0 +1,35 @@
+# Example configuration file for MSSQL MCP Server
+# Copy this file to config.toml and customize for your environment
+
+[mssql]
+# SQL Server hostname or IP address
+server = "localhost"
+
+# Database name to connect to
+database = "master"
+
+# ODBC driver name (must be installed on your system)
+# Common options:
+#   - "ODBC Driver 17 for SQL Server"
+#   - "ODBC Driver 18 for SQL Server"
+driver = "ODBC Driver 17 for SQL Server"
+
+# Connection timeout in seconds (1-300)
+connection_timeout = 30
+
+# Usage Examples:
+#
+# 1. Run with config file:
+#    mssql-mcp-server --config config.toml
+#
+# 2. Override specific settings via CLI:
+#    mssql-mcp-server --config config.toml --server sql.example.com
+#
+# 3. Validate configuration without starting server:
+#    mssql-mcp-server --config config.toml --validate-only
+#
+# Configuration Priority (highest to lowest):
+#   1. CLI arguments
+#   2. Config file
+#   3. Environment variables
+#   4. Defaults

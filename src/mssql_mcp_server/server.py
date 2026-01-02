@@ -38,22 +38,56 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anyio
 import pyodbc
 from fastmcp import FastMCP
 
+if TYPE_CHECKING:
+    from mssql_mcp_server.config import ServerConfig
+
 # Configure logging
 logger = logging.getLogger("mssql_mcp_server")
 
-# Configuration from environment
+# Global configuration (loaded at startup)
+# Will be initialized in main() or when imported
+_config: "ServerConfig | None" = None
+
+# Legacy environment variable support (will be removed in v1.0.0)
 MSSQL_SERVER = os.environ.get("MSSQL_SERVER", "localhost")
 MSSQL_DATABASE = os.environ.get("MSSQL_DATABASE", "master")
 ODBC_DRIVER = os.environ.get("ODBC_DRIVER", "ODBC Driver 17 for SQL Server")
-
-# Connection settings
 CONNECTION_TIMEOUT = int(os.environ.get("MSSQL_CONNECTION_TIMEOUT", "30"))
+
+
+def set_config(config: "ServerConfig") -> None:
+    """Set global server configuration.
+
+    Args:
+        config: Server configuration to use
+
+    """
+    global _config
+    _config = config
+
+
+def get_config() -> tuple[str, str, str, int]:
+    """Get current configuration values.
+
+    Returns:
+        Tuple of (server, database, driver, timeout)
+
+    """
+    if _config:
+        return (
+            _config.server,
+            _config.database,
+            _config.driver,
+            _config.connection_timeout,
+        )
+    # Fall back to environment variables
+    return (MSSQL_SERVER, MSSQL_DATABASE, ODBC_DRIVER, CONNECTION_TIMEOUT)
 
 
 def create_connection() -> pyodbc.Connection:
@@ -63,14 +97,15 @@ def create_connection() -> pyodbc.Connection:
     Windows ODBC Driver handles connection pooling at the driver level,
     so we don't need application-level pooling.
     """
+    server, database, driver, timeout = get_config()
     conn_str = (
-        f"DRIVER={{{ODBC_DRIVER}}};"
-        f"SERVER={MSSQL_SERVER};"
-        f"DATABASE={MSSQL_DATABASE};"
+        f"DRIVER={{{driver}}};"
+        f"SERVER={server};"
+        f"DATABASE={database};"
         f"Trusted_Connection=yes;"
         f"TrustServerCertificate=yes;"
     )
-    return pyodbc.connect(conn_str, timeout=CONNECTION_TIMEOUT)
+    return pyodbc.connect(conn_str, timeout=timeout)
 
 
 @asynccontextmanager
@@ -80,14 +115,13 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     Logs server initialization and cleanup. Connection pooling is handled
     transparently by the Windows ODBC Driver at the driver level.
     """
-    logger.info(
-        f"Starting MSSQL MCP Server: server={MSSQL_SERVER}, database={MSSQL_DATABASE}"
-    )
+    server_name, database, _, _ = get_config()
+    logger.info(f"Starting MSSQL MCP Server: server={server_name}, database={database}")
     logger.info(
         "Using per-request connections (ODBC driver handles pooling at driver level)"
     )
 
-    yield {"server": MSSQL_SERVER, "database": MSSQL_DATABASE}
+    yield {"server": server_name, "database": database}
 
     logger.info("Shutting down MSSQL MCP Server")
 
@@ -1212,7 +1246,30 @@ async def database_info_resource() -> str:
 
 
 def main() -> None:
-    """Run the MCP server."""
+    """Run the MCP server with configuration and health check."""
+    # Avoid circular import by importing here
+    from mssql_mcp_server.config import load_config
+    from mssql_mcp_server.health import run_health_check
+
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Load configuration (handles CLI args, config file, env vars)
+    config = load_config()
+
+    # Set global config for create_connection()
+    set_config(config)
+
+    # Run health check
+    logger.info("Running startup health check...")
+    if not run_health_check(config, verbose=True):
+        logger.error("Health check failed. Exiting.")
+        raise SystemExit(1)
+
+    logger.info("Starting MSSQL MCP Server...")
     mcp.run()
 
 

@@ -127,11 +127,15 @@ This document outlines the development roadmap for transforming the pyodbc MCP S
 - [x] Async behavior tests (11 tests for concurrency and thread safety)
 - [x] **Achievement: 77.07% code coverage** (target was 80%, nearly met - gap is unreachable code paths)
 
-### 3.2 Configuration Improvements
-- [ ] CLI arguments (`--server`, `--database`, `--driver`)
-- [ ] Config file support (TOML/YAML)
-- [ ] Validation on startup with clear error messages
-- [ ] Health check on initialization
+### 3.2 Configuration Improvements ✅ COMPLETED
+- [x] CLI arguments (`--server`, `--database`, `--driver`, `--connection-timeout`)
+- [x] Config file support (TOML via `--config` flag)
+- [x] Validation on startup with clear error messages
+- [x] Health check on initialization with database connection testing
+- [x] `--validate-only` flag for configuration testing
+- [x] Configuration priority system (CLI > Config file > Env vars > Defaults)
+- [x] Backward compatibility with environment variables
+- [x] **Achievement: 79.83% code coverage** (up from 77.07%, 43 new tests, 100% health.py coverage)
 
 ### 3.3 Error Handling
 - [ ] Typed error classes (ConnectionError, QueryError, SecurityError)
