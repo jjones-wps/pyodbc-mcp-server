@@ -745,6 +745,87 @@ async def ListStoredProcedures(schema_filter: str | None = None) -> str:
     return json.dumps(result, indent=2)
 
 
+@mcp.tool()
+async def ListFunctions(schema_filter: str | None = None) -> str:
+    """List user-defined functions in the database with parameter information.
+
+    Args:
+        schema_filter: Optional schema to filter (e.g., 'dbo')
+
+    Returns:
+        JSON string with function names, types, and parameter info
+
+    """
+    logger.debug(f"ListFunctions called with schema_filter={schema_filter}")
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    SCHEMA_NAME(o.schema_id) AS schema_name,
+                    o.name AS function_name,
+                    o.type_desc AS function_type,
+                    STUFF((
+                        SELECT ', ' + par.name + ' ' + TYPE_NAME(par.user_type_id)
+                        FROM sys.parameters par
+                        WHERE par.object_id = o.object_id
+                        ORDER BY par.parameter_id
+                        FOR XML PATH('')
+                    ), 1, 2, '') AS parameters
+                FROM sys.objects o
+                WHERE o.type IN ('FN', 'IF', 'TF')
+                  AND SCHEMA_NAME(o.schema_id) = COALESCE(?, SCHEMA_NAME(o.schema_id))
+                ORDER BY schema_name, function_name
+            """
+            if schema_filter:
+                cursor.execute(query, (schema_filter,))
+            else:
+                cursor.execute(query, (None,))
+
+            functions = []
+            for row in cursor.fetchall():
+                func: dict[str, Any] = {
+                    "schema": row.schema_name,
+                    "name": row.function_name,
+                    "full_name": f"{row.schema_name}.{row.function_name}",
+                    "type": row.function_type,
+                }
+                if row.parameters:
+                    func["parameters"] = row.parameters
+                else:
+                    func["parameters"] = None
+
+                functions.append(func)
+
+            return functions
+        finally:
+            conn.close()
+
+    functions = await run_in_thread(_query)
+
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "function_count": len(functions),
+        "functions": functions[:500],
+    }
+
+    if schema_filter:
+        result["schema_filter"] = schema_filter
+
+    if len(functions) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(functions)} functions. "
+            "Use schema_filter to narrow results."
+        )
+
+    logger.debug(f"Found {len(functions)} user-defined functions")
+    return json.dumps(result, indent=2)
+
+
 # =============================================================================
 # MCP Resources
 # =============================================================================

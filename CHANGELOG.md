@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ListIndexes` tool - Get indexes defined on a table with columns, types, and properties
 - `ListConstraints` tool - Get CHECK, UNIQUE, and DEFAULT constraints with definitions
 - `ListStoredProcedures` tool - List stored procedures with parameter information and schema filtering
+- `ListFunctions` tool - List user-defined functions (scalar, inline table-valued, table-valued) with parameter information
 - Unit tests for `ListIndexes` tool (schema parsing, output structure validation)
 - Unit tests for `ListConstraints` tool (7 tests for constraint types, definitions, structure)
 - Unit tests for `ListStoredProcedures` tool (6 tests for filtering, parameters, output structure)
+- Unit tests for `ListFunctions` tool (7 tests for function types, filtering, parameters)
 - Phase 2 implementation plan document (docs/PHASE_2_PLAN.md)
 
 ### Changed

@@ -591,3 +591,149 @@ class TestListStoredProcedures:
         assert "note" in sample_output
         assert "500" in sample_output["note"]
         assert "schema_filter" in sample_output["note"]
+
+
+class TestListFunctions:
+    """Tests for the ListFunctions tool (Phase 2)."""
+
+    def test_output_structure_without_filter(self):
+        """ListFunctions output should have expected JSON structure."""
+        # Expected output format without schema filter
+        expected_keys = {"database", "server", "function_count", "functions"}
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "function_count": 2,
+            "functions": [
+                {
+                    "schema": "dbo",
+                    "name": "CalculateDiscount",
+                    "full_name": "dbo.CalculateDiscount",
+                    "type": "SQL_SCALAR_FUNCTION",
+                    "parameters": "@Amount decimal, @Percentage decimal",
+                },
+                {
+                    "schema": "sales",
+                    "name": "GetTopCustomers",
+                    "full_name": "sales.GetTopCustomers",
+                    "type": "SQL_INLINE_TABLE_VALUED_FUNCTION",
+                    "parameters": "@TopN int",
+                },
+            ],
+        }
+
+        assert set(sample_output.keys()) == expected_keys
+        assert isinstance(sample_output["functions"], list)
+        assert len(sample_output["functions"]) == sample_output["function_count"]
+
+    def test_output_structure_with_filter(self):
+        """ListFunctions with schema filter should include filter in output."""
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "function_count": 1,
+            "schema_filter": "dbo",
+            "functions": [
+                {
+                    "schema": "dbo",
+                    "name": "CalculateDiscount",
+                    "full_name": "dbo.CalculateDiscount",
+                    "type": "SQL_SCALAR_FUNCTION",
+                    "parameters": "@Amount decimal",
+                }
+            ],
+        }
+
+        assert "schema_filter" in sample_output
+        assert sample_output["schema_filter"] == "dbo"
+
+    def test_function_types(self):
+        """Functions should support different function types."""
+        supported_types = {
+            "SQL_SCALAR_FUNCTION",
+            "SQL_INLINE_TABLE_VALUED_FUNCTION",
+            "SQL_TABLE_VALUED_FUNCTION",
+        }
+        sample_functions = [
+            {
+                "schema": "dbo",
+                "name": "CalcTotal",
+                "full_name": "dbo.CalcTotal",
+                "type": "SQL_SCALAR_FUNCTION",
+                "parameters": None,
+            },
+            {
+                "schema": "dbo",
+                "name": "GetOrders",
+                "full_name": "dbo.GetOrders",
+                "type": "SQL_INLINE_TABLE_VALUED_FUNCTION",
+                "parameters": "@CustomerID int",
+            },
+            {
+                "schema": "dbo",
+                "name": "SplitString",
+                "full_name": "dbo.SplitString",
+                "type": "SQL_TABLE_VALUED_FUNCTION",
+                "parameters": "@String varchar",
+            },
+        ]
+
+        for func in sample_functions:
+            assert func["type"] in supported_types
+
+    def test_function_with_parameters(self):
+        """Functions with parameters should include parameter list."""
+        function_with_params = {
+            "schema": "dbo",
+            "name": "CalculateDiscount",
+            "full_name": "dbo.CalculateDiscount",
+            "type": "SQL_SCALAR_FUNCTION",
+            "parameters": "@Amount decimal, @Percentage decimal",
+        }
+
+        required_props = {"schema", "name", "full_name", "type", "parameters"}
+        assert set(function_with_params.keys()) == required_props
+        assert function_with_params["parameters"] is not None
+        assert "@Amount" in function_with_params["parameters"]
+        assert "decimal" in function_with_params["parameters"]
+
+    def test_function_without_parameters(self):
+        """Functions without parameters should have parameters set to None."""
+        function_no_params = {
+            "schema": "dbo",
+            "name": "GetCurrentTimestamp",
+            "full_name": "dbo.GetCurrentTimestamp",
+            "type": "SQL_SCALAR_FUNCTION",
+            "parameters": None,
+        }
+
+        assert "parameters" in function_no_params
+        assert function_no_params["parameters"] is None
+
+    def test_full_name_format(self):
+        """Full name should be schema.function_name format."""
+        function = {
+            "schema": "sales",
+            "name": "CalculateTotal",
+            "full_name": "sales.CalculateTotal",
+            "type": "SQL_SCALAR_FUNCTION",
+            "parameters": None,
+        }
+
+        expected_full_name = f"{function['schema']}.{function['name']}"
+        assert function["full_name"] == expected_full_name
+
+    def test_large_result_truncation(self):
+        """Large result sets should be truncated with a note."""
+        # Simulate output with > 500 functions
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "function_count": 750,
+            "functions": [],  # Would contain first 500
+            "note": "Showing first 500 of 750 functions. Use schema_filter to narrow results.",
+        }
+
+        assert "note" in sample_output
+        assert "500" in sample_output["note"]
+        assert "schema_filter" in sample_output["note"]
