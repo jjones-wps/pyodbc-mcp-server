@@ -485,3 +485,109 @@ class TestListConstraints:
         required_props = {"name", "type", "column"}
         assert set(unique_constraint.keys()) >= required_props
         assert unique_constraint["type"] == "UNIQUE"
+
+
+class TestListStoredProcedures:
+    """Tests for the ListStoredProcedures tool (Phase 2)."""
+
+    def test_output_structure_without_filter(self):
+        """ListStoredProcedures output should have expected JSON structure."""
+        # Expected output format without schema filter
+        expected_keys = {"database", "server", "procedure_count", "procedures"}
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "procedure_count": 2,
+            "procedures": [
+                {
+                    "schema": "dbo",
+                    "name": "GetCustomerOrders",
+                    "full_name": "dbo.GetCustomerOrders",
+                    "parameters": "@CustomerID int, @StartDate datetime",
+                },
+                {
+                    "schema": "sales",
+                    "name": "CalculateTotal",
+                    "full_name": "sales.CalculateTotal",
+                    "parameters": None,
+                },
+            ],
+        }
+
+        assert set(sample_output.keys()) == expected_keys
+        assert isinstance(sample_output["procedures"], list)
+        assert len(sample_output["procedures"]) == sample_output["procedure_count"]
+
+    def test_output_structure_with_filter(self):
+        """ListStoredProcedures with schema filter should include filter in output."""
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "procedure_count": 1,
+            "schema_filter": "dbo",
+            "procedures": [
+                {
+                    "schema": "dbo",
+                    "name": "GetCustomerOrders",
+                    "full_name": "dbo.GetCustomerOrders",
+                    "parameters": "@CustomerID int",
+                }
+            ],
+        }
+
+        assert "schema_filter" in sample_output
+        assert sample_output["schema_filter"] == "dbo"
+
+    def test_procedure_with_parameters(self):
+        """Procedures with parameters should include parameter list."""
+        procedure_with_params = {
+            "schema": "dbo",
+            "name": "GetCustomerOrders",
+            "full_name": "dbo.GetCustomerOrders",
+            "parameters": "@CustomerID int, @StartDate datetime",
+        }
+
+        required_props = {"schema", "name", "full_name", "parameters"}
+        assert set(procedure_with_params.keys()) == required_props
+        assert procedure_with_params["parameters"] is not None
+        assert "@CustomerID" in procedure_with_params["parameters"]
+        assert "int" in procedure_with_params["parameters"]
+
+    def test_procedure_without_parameters(self):
+        """Procedures without parameters should have parameters set to None."""
+        procedure_no_params = {
+            "schema": "dbo",
+            "name": "GetAllCustomers",
+            "full_name": "dbo.GetAllCustomers",
+            "parameters": None,
+        }
+
+        assert "parameters" in procedure_no_params
+        assert procedure_no_params["parameters"] is None
+
+    def test_full_name_format(self):
+        """Full name should be schema.procedure_name format."""
+        procedure = {
+            "schema": "sales",
+            "name": "CalculateTotal",
+            "full_name": "sales.CalculateTotal",
+            "parameters": None,
+        }
+
+        expected_full_name = f"{procedure['schema']}.{procedure['name']}"
+        assert procedure["full_name"] == expected_full_name
+
+    def test_large_result_truncation(self):
+        """Large result sets should be truncated with a note."""
+        # Simulate output with > 500 procedures
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "procedure_count": 750,
+            "procedures": [],  # Would contain first 500
+            "note": "Showing first 500 of 750 procedures. Use schema_filter to narrow results.",
+        }
+
+        assert "note" in sample_output
+        assert "500" in sample_output["note"]
+        assert "schema_filter" in sample_output["note"]

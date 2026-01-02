@@ -665,6 +665,86 @@ async def ListConstraints(table_name: str) -> str:
     return json.dumps(result, indent=2)
 
 
+@mcp.tool()
+async def ListStoredProcedures(schema_filter: str | None = None) -> str:
+    """List stored procedures in the database with parameter information.
+
+    Args:
+        schema_filter: Optional schema to filter (e.g., 'dbo')
+
+    Returns:
+        JSON string with stored procedure names and parameter info
+
+    """
+    logger.debug(f"ListStoredProcedures called with schema_filter={schema_filter}")
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    SCHEMA_NAME(p.schema_id) AS schema_name,
+                    p.name AS procedure_name,
+                    p.create_date,
+                    p.modify_date,
+                    STUFF((
+                        SELECT ', ' + par.name + ' ' + TYPE_NAME(par.user_type_id)
+                        FROM sys.parameters par
+                        WHERE par.object_id = p.object_id
+                        ORDER BY par.parameter_id
+                        FOR XML PATH('')
+                    ), 1, 2, '') AS parameters
+                FROM sys.procedures p
+                WHERE SCHEMA_NAME(p.schema_id) = COALESCE(?, SCHEMA_NAME(p.schema_id))
+                ORDER BY schema_name, procedure_name
+            """
+            if schema_filter:
+                cursor.execute(query, (schema_filter,))
+            else:
+                cursor.execute(query, (None,))
+
+            procedures = []
+            for row in cursor.fetchall():
+                proc: dict[str, Any] = {
+                    "schema": row.schema_name,
+                    "name": row.procedure_name,
+                    "full_name": f"{row.schema_name}.{row.procedure_name}",
+                }
+                if row.parameters:
+                    proc["parameters"] = row.parameters
+                else:
+                    proc["parameters"] = None
+
+                procedures.append(proc)
+
+            return procedures
+        finally:
+            conn.close()
+
+    procedures = await run_in_thread(_query)
+
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "procedure_count": len(procedures),
+        "procedures": procedures[:500],
+    }
+
+    if schema_filter:
+        result["schema_filter"] = schema_filter
+
+    if len(procedures) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(procedures)} procedures. "
+            "Use schema_filter to narrow results."
+        )
+
+    logger.debug(f"Found {len(procedures)} stored procedures")
+    return json.dumps(result, indent=2)
+
+
 # =============================================================================
 # MCP Resources
 # =============================================================================
