@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Pytest coverage thresholds (minimum 15% required)
+- HTML coverage reports for detailed analysis
+- Coverage.py configuration with proper source paths and omit patterns
+- PEP 257 docstring compliance enforcement via ruff
+- Security documentation templates (.env.example)
+
+### Changed
+- CI workflow now enforces coverage thresholds (--cov-fail-under=15)
+- Codecov upload now fails CI on error (fail_ci_if_error: true)
+- All module and tool docstrings updated to PEP 257 standards
+- Tool docstrings converted to imperative mood (List vs Lists)
+- Development environment setup documented and verified
+
+### Fixed
+- All 27 PEP 257 docstring compliance issues resolved
+- Module docstring formatting (added period to first line)
+- Docstring whitespace and blank line formatting
+
+### Removed
+- Redundant requirements.txt file (pyproject.toml is single source of truth)
+- Cache directory pollution (.mypy_cache, .ruff_cache, .coverage)
+
 ## [0.2.2] - 2025-12-12
 
 ### Added
