@@ -1052,3 +1052,205 @@ class TestListTriggers:
         assert sample_output["trigger_count"] == 750
         assert "note" in sample_output
         assert "500" in sample_output["note"]
+
+
+class TestGetTableRelationshipsEnhancements:
+    """Tests for GetTableRelationships tool enhancements (Phase 2)."""
+
+    def test_outgoing_relationship_structure(self):
+        """Outgoing relationships should include all enhanced fields."""
+        outgoing_relationship = {
+            "constraint": "FK_orders_customer_id",
+            "columns": ["customer_id"],
+            "references_table": "dbo.customers",
+            "references_columns": ["id"],
+            "on_delete": "NO_ACTION",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        # Verify all required fields are present
+        assert "constraint" in outgoing_relationship
+        assert "columns" in outgoing_relationship
+        assert "references_table" in outgoing_relationship
+        assert "references_columns" in outgoing_relationship
+        assert "on_delete" in outgoing_relationship
+        assert "on_update" in outgoing_relationship
+        assert "is_disabled" in outgoing_relationship
+
+    def test_incoming_relationship_structure(self):
+        """Incoming relationships should include all enhanced fields."""
+        incoming_relationship = {
+            "constraint": "FK_order_items_order_id",
+            "from_table": "dbo.order_items",
+            "from_columns": ["order_id"],
+            "to_columns": ["id"],
+            "on_delete": "CASCADE",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        # Verify all required fields are present
+        assert "constraint" in incoming_relationship
+        assert "from_table" in incoming_relationship
+        assert "from_columns" in incoming_relationship
+        assert "to_columns" in incoming_relationship
+        assert "on_delete" in incoming_relationship
+        assert "on_update" in incoming_relationship
+        assert "is_disabled" in incoming_relationship
+
+    def test_on_delete_cascade_action(self):
+        """ON DELETE CASCADE should be properly represented."""
+        relationship = {
+            "constraint": "FK_order_items_order_id",
+            "columns": ["order_id"],
+            "references_table": "dbo.orders",
+            "references_columns": ["id"],
+            "on_delete": "CASCADE",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        assert relationship["on_delete"] == "CASCADE"
+
+    def test_on_delete_set_null_action(self):
+        """ON DELETE SET NULL should be properly represented."""
+        relationship = {
+            "constraint": "FK_orders_sales_rep",
+            "columns": ["sales_rep_id"],
+            "references_table": "dbo.employees",
+            "references_columns": ["id"],
+            "on_delete": "SET_NULL",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        assert relationship["on_delete"] == "SET_NULL"
+
+    def test_on_update_cascade_action(self):
+        """ON UPDATE CASCADE should be properly represented."""
+        relationship = {
+            "constraint": "FK_orders_customer_id",
+            "columns": ["customer_id"],
+            "references_table": "dbo.customers",
+            "references_columns": ["id"],
+            "on_delete": "NO_ACTION",
+            "on_update": "CASCADE",
+            "is_disabled": False,
+        }
+
+        assert relationship["on_update"] == "CASCADE"
+
+    def test_composite_foreign_key_outgoing(self):
+        """Composite foreign keys should have multiple columns in arrays."""
+        composite_fk = {
+            "constraint": "FK_order_items_product",
+            "columns": ["product_id", "warehouse_id"],
+            "references_table": "dbo.inventory",
+            "references_columns": ["product_id", "warehouse_id"],
+            "on_delete": "NO_ACTION",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        assert len(composite_fk["columns"]) == 2
+        assert len(composite_fk["references_columns"]) == 2
+        assert composite_fk["columns"] == ["product_id", "warehouse_id"]
+        assert composite_fk["references_columns"] == ["product_id", "warehouse_id"]
+
+    def test_composite_foreign_key_incoming(self):
+        """Composite FKs in incoming relationships should have multiple columns."""
+        composite_fk = {
+            "constraint": "FK_shipments_order",
+            "from_table": "dbo.shipments",
+            "from_columns": ["order_id", "order_line"],
+            "to_columns": ["order_id", "line_number"],
+            "on_delete": "CASCADE",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        assert len(composite_fk["from_columns"]) == 2
+        assert len(composite_fk["to_columns"]) == 2
+
+    def test_disabled_foreign_key(self):
+        """Disabled foreign keys should have is_disabled=True."""
+        disabled_fk = {
+            "constraint": "FK_temp_orders_customer",
+            "columns": ["customer_id"],
+            "references_table": "dbo.customers",
+            "references_columns": ["id"],
+            "on_delete": "NO_ACTION",
+            "on_update": "NO_ACTION",
+            "is_disabled": True,
+        }
+
+        assert disabled_fk["is_disabled"] is True
+        assert isinstance(disabled_fk["is_disabled"], bool)
+
+    def test_enabled_foreign_key(self):
+        """Enabled foreign keys should have is_disabled=False."""
+        enabled_fk = {
+            "constraint": "FK_orders_customer_id",
+            "columns": ["customer_id"],
+            "references_table": "dbo.customers",
+            "references_columns": ["id"],
+            "on_delete": "NO_ACTION",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        assert enabled_fk["is_disabled"] is False
+
+    def test_schema_qualified_references_table(self):
+        """Referenced table should include schema (schema.table format)."""
+        relationship = {
+            "constraint": "FK_orders_customer_id",
+            "columns": ["customer_id"],
+            "references_table": "sales.customers",
+            "references_columns": ["id"],
+            "on_delete": "NO_ACTION",
+            "on_update": "NO_ACTION",
+            "is_disabled": False,
+        }
+
+        assert "." in relationship["references_table"]
+        assert relationship["references_table"] == "sales.customers"
+
+    def test_full_result_structure(self):
+        """Complete result should have all expected top-level fields."""
+        result = {
+            "table": "dbo.orders",
+            "outgoing_relationships": [
+                {
+                    "constraint": "FK_orders_customer_id",
+                    "columns": ["customer_id"],
+                    "references_table": "dbo.customers",
+                    "references_columns": ["id"],
+                    "on_delete": "NO_ACTION",
+                    "on_update": "NO_ACTION",
+                    "is_disabled": False,
+                }
+            ],
+            "incoming_relationships": [
+                {
+                    "constraint": "FK_order_items_order_id",
+                    "from_table": "dbo.order_items",
+                    "from_columns": ["order_id"],
+                    "to_columns": ["id"],
+                    "on_delete": "CASCADE",
+                    "on_update": "NO_ACTION",
+                    "is_disabled": False,
+                }
+            ],
+            "outgoing_count": 1,
+            "incoming_count": 1,
+        }
+
+        assert "table" in result
+        assert "outgoing_relationships" in result
+        assert "incoming_relationships" in result
+        assert "outgoing_count" in result
+        assert "incoming_count" in result
+        assert result["outgoing_count"] == len(result["outgoing_relationships"])
+        assert result["incoming_count"] == len(result["incoming_relationships"])

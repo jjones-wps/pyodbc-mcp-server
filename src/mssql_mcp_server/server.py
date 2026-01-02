@@ -457,7 +457,12 @@ async def GetTableRelationships(table_name: str) -> str:
         table_name: Name of the table (can include schema, e.g., 'dbo.oe_hdr')
 
     Returns:
-        JSON string with incoming and outgoing foreign key relationships
+        JSON string with incoming and outgoing foreign key relationships including:
+        - Constraint names
+        - Column mappings (supports composite foreign keys)
+        - Referential actions (ON DELETE, ON UPDATE)
+        - Enabled/disabled status
+        - Full schema-qualified table names
 
     """
     logger.debug(f"GetTableRelationships called for {table_name}")
@@ -469,7 +474,7 @@ async def GetTableRelationships(table_name: str) -> str:
         schema = "dbo"
         table = table_name
 
-    def _query() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    def _query() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Execute query with per-request connection (thread-safe)."""
         conn = create_connection()
         try:
@@ -479,24 +484,42 @@ async def GetTableRelationships(table_name: str) -> str:
             outgoing_query = """
                 SELECT
                     fk.name AS constraint_name,
+                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS referenced_schema,
                     OBJECT_NAME(fk.referenced_object_id) AS referenced_table,
                     COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS column_name,
-                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column,
+                    fk.delete_referential_action_desc AS on_delete,
+                    fk.update_referential_action_desc AS on_update,
+                    fk.is_disabled,
+                    fkc.constraint_column_id
                 FROM sys.foreign_keys fk
                 JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
                 WHERE OBJECT_NAME(fk.parent_object_id) = ?
                   AND OBJECT_SCHEMA_NAME(fk.parent_object_id) = ?
+                ORDER BY fk.name, fkc.constraint_column_id
             """
             cursor.execute(outgoing_query, (table, schema))
-            outgoing = [
-                {
-                    "constraint": row.constraint_name,
-                    "column": row.column_name,
-                    "references_table": row.referenced_table,
-                    "references_column": row.referenced_column,
-                }
-                for row in cursor.fetchall()
-            ]
+
+            # Group outgoing FKs by constraint (for composite FKs)
+            outgoing_raw = cursor.fetchall()
+            outgoing_map: dict[str, dict[str, Any]] = {}
+            for row in outgoing_raw:
+                if row.constraint_name not in outgoing_map:
+                    outgoing_map[row.constraint_name] = {
+                        "constraint": row.constraint_name,
+                        "columns": [],
+                        "references_table": f"{row.referenced_schema}.{row.referenced_table}",
+                        "references_columns": [],
+                        "on_delete": row.on_delete,
+                        "on_update": row.on_update,
+                        "is_disabled": bool(row.is_disabled),
+                    }
+                outgoing_map[row.constraint_name]["columns"].append(row.column_name)
+                outgoing_map[row.constraint_name]["references_columns"].append(
+                    row.referenced_column
+                )
+
+            outgoing = list(outgoing_map.values())
 
             # Get incoming FKs (other tables reference this one)
             incoming_query = """
@@ -505,22 +528,41 @@ async def GetTableRelationships(table_name: str) -> str:
                     OBJECT_SCHEMA_NAME(fk.parent_object_id) AS referencing_schema,
                     OBJECT_NAME(fk.parent_object_id) AS referencing_table,
                     COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS referencing_column,
-                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column,
+                    fk.delete_referential_action_desc AS on_delete,
+                    fk.update_referential_action_desc AS on_update,
+                    fk.is_disabled,
+                    fkc.constraint_column_id
                 FROM sys.foreign_keys fk
                 JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
                 WHERE OBJECT_NAME(fk.referenced_object_id) = ?
                   AND OBJECT_SCHEMA_NAME(fk.referenced_object_id) = ?
+                ORDER BY fk.name, fkc.constraint_column_id
             """
             cursor.execute(incoming_query, (table, schema))
-            incoming = [
-                {
-                    "constraint": row.constraint_name,
-                    "from_table": f"{row.referencing_schema}.{row.referencing_table}",
-                    "from_column": row.referencing_column,
-                    "to_column": row.referenced_column,
-                }
-                for row in cursor.fetchall()
-            ]
+
+            # Group incoming FKs by constraint (for composite FKs)
+            incoming_raw = cursor.fetchall()
+            incoming_map: dict[str, dict[str, Any]] = {}
+            for row in incoming_raw:
+                if row.constraint_name not in incoming_map:
+                    incoming_map[row.constraint_name] = {
+                        "constraint": row.constraint_name,
+                        "from_table": f"{row.referencing_schema}.{row.referencing_table}",
+                        "from_columns": [],
+                        "to_columns": [],
+                        "on_delete": row.on_delete,
+                        "on_update": row.on_update,
+                        "is_disabled": bool(row.is_disabled),
+                    }
+                incoming_map[row.constraint_name]["from_columns"].append(
+                    row.referencing_column
+                )
+                incoming_map[row.constraint_name]["to_columns"].append(
+                    row.referenced_column
+                )
+
+            incoming = list(incoming_map.values())
             return outgoing, incoming
         finally:
             conn.close()

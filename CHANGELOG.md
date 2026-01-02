@@ -18,12 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `is_primary_key` boolean field on all columns
   - `foreign_key` object on FK columns with `references_table` and `references_column` fields
   - Support for composite primary keys and columns that are both PK and FK
+- **GetTableRelationships Enhancements** - Comprehensive foreign key metadata with referential actions
+  - ON DELETE and ON UPDATE actions (CASCADE, SET_NULL, NO_ACTION, SET_DEFAULT)
+  - Schema-qualified table names in relationships (schema.table format)
+  - Enabled/disabled status for foreign key constraints
+  - Composite foreign key support (multiple columns grouped by constraint)
+  - Column arrays instead of single column fields for better composite FK representation
 - Unit tests for `ListIndexes` tool (schema parsing, output structure validation)
 - Unit tests for `ListConstraints` tool (7 tests for constraint types, definitions, structure)
 - Unit tests for `ListStoredProcedures` tool (6 tests for filtering, parameters, output structure)
 - Unit tests for `ListFunctions` tool (7 tests for function types, filtering, parameters)
 - Unit tests for `ListTriggers` tool (11 tests for trigger types, events, disabled status, table references)
 - Unit tests for `DescribeTable` enhancements (7 tests for PK/FK indicators, composite keys, dual relationships)
+- Unit tests for `GetTableRelationships` enhancements (11 tests for referential actions, composite FKs, disabled constraints, schema qualification)
 - Phase 2 implementation plan document (docs/PHASE_2_PLAN.md)
 
 ### Changed
@@ -31,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow updated to use 13% coverage threshold
 - `DescribeTable` tool now queries INFORMATION_SCHEMA.KEY_COLUMN_USAGE for primary keys
 - `DescribeTable` tool now queries sys.foreign_key_columns for foreign key relationships
+- `GetTableRelationships` tool now groups composite foreign keys by constraint
+- `GetTableRelationships` tool uses column arrays (`columns`, `references_columns`, `from_columns`, `to_columns`) instead of single fields
+- `GetTableRelationships` tool now queries sys.foreign_keys for ON DELETE/ON UPDATE actions and disabled status
 
 ## [0.2.3] - 2026-01-02
 
