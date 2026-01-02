@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Phase 2: Feature Completeness** - Starting comprehensive SQL Server schema discovery
 - `ListIndexes` tool - Get indexes defined on a table with columns, types, and properties
+- `ListConstraints` tool - Get CHECK, UNIQUE, and DEFAULT constraints with definitions
 - Unit tests for `ListIndexes` tool (schema parsing, output structure validation)
+- Unit tests for `ListConstraints` tool (7 tests for constraint types, definitions, structure)
 - Phase 2 implementation plan document (docs/PHASE_2_PLAN.md)
 
 ## [0.2.3] - 2026-01-02

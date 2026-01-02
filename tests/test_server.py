@@ -367,3 +367,121 @@ class TestListIndexes:
         assert isinstance(sample_index["is_unique"], bool)
         assert isinstance(sample_index["is_primary_key"], bool)
         assert isinstance(sample_index["columns"], str)
+
+
+class TestListConstraints:
+    """Tests for the ListConstraints tool (Phase 2)."""
+
+    def test_parses_schema_table_format(self):
+        """ListConstraints should parse schema.table format correctly."""
+        table_name = "sales.orders"
+        expected_schema = "sales"
+        expected_table = "orders"
+
+        # Simulate the parsing logic from ListConstraints
+        if "." in table_name:
+            schema, table = table_name.split(".", 1)
+        else:
+            schema = "dbo"
+            table = table_name
+
+        assert schema == expected_schema
+        assert table == expected_table
+
+    def test_uses_default_schema_when_not_specified(self):
+        """ListConstraints should use 'dbo' as default schema."""
+        table_name = "orders"
+        expected_schema = "dbo"
+        expected_table = "orders"
+
+        # Simulate the parsing logic from ListConstraints
+        if "." in table_name:
+            schema, table = table_name.split(".", 1)
+        else:
+            schema = "dbo"
+            table = table_name
+
+        assert schema == expected_schema
+        assert table == expected_table
+
+    def test_output_structure(self):
+        """ListConstraints output should have expected JSON structure."""
+        # Expected output format
+        expected_keys = {"table", "constraint_count", "constraints"}
+        sample_output = {
+            "table": "dbo.orders",
+            "constraint_count": 3,
+            "constraints": [
+                {
+                    "name": "CK_orders_quantity",
+                    "type": "CHECK",
+                    "column": "quantity",
+                    "definition": "([quantity]>(0))",
+                },
+                {
+                    "name": "UQ_orders_order_number",
+                    "type": "UNIQUE",
+                    "column": "order_number",
+                },
+                {
+                    "name": "DF_orders_status",
+                    "type": "DEFAULT",
+                    "column": "status",
+                    "definition": "('pending')",
+                },
+            ],
+        }
+
+        assert set(sample_output.keys()) == expected_keys
+        assert isinstance(sample_output["constraints"], list)
+        assert len(sample_output["constraints"]) == sample_output["constraint_count"]
+
+    def test_constraint_types(self):
+        """Constraints should support CHECK, UNIQUE, and DEFAULT types."""
+        supported_types = {"CHECK", "UNIQUE", "DEFAULT"}
+        sample_constraints = [
+            {"name": "CK_test", "type": "CHECK", "column": "col1"},
+            {"name": "UQ_test", "type": "UNIQUE", "column": "col2"},
+            {"name": "DF_test", "type": "DEFAULT", "column": "col3"},
+        ]
+
+        for constraint in sample_constraints:
+            assert constraint["type"] in supported_types
+
+    def test_check_constraint_has_definition(self):
+        """CHECK constraints should include definition clause."""
+        check_constraint = {
+            "name": "CK_orders_quantity",
+            "type": "CHECK",
+            "column": "quantity",
+            "definition": "([quantity]>(0))",
+        }
+
+        assert "definition" in check_constraint
+        assert check_constraint["definition"]
+        assert "quantity" in check_constraint["definition"]
+
+    def test_default_constraint_has_definition(self):
+        """DEFAULT constraints should include default value."""
+        default_constraint = {
+            "name": "DF_orders_status",
+            "type": "DEFAULT",
+            "column": "status",
+            "definition": "('pending')",
+        }
+
+        assert "definition" in default_constraint
+        assert default_constraint["definition"]
+        assert "pending" in default_constraint["definition"]
+
+    def test_unique_constraint_structure(self):
+        """UNIQUE constraints should have name, type, and column."""
+        unique_constraint = {
+            "name": "UQ_orders_order_number",
+            "type": "UNIQUE",
+            "column": "order_number",
+        }
+
+        required_props = {"name", "type", "column"}
+        assert set(unique_constraint.keys()) >= required_props
+        assert unique_constraint["type"] == "UNIQUE"

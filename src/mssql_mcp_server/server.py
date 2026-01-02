@@ -564,6 +564,107 @@ async def ListIndexes(table_name: str) -> str:
     return json.dumps(result, indent=2)
 
 
+@mcp.tool()
+async def ListConstraints(table_name: str) -> str:
+    """List constraints defined on a table (CHECK, UNIQUE, DEFAULT).
+
+    Args:
+        table_name: Table name (can include schema, e.g., 'dbo.orders')
+
+    Returns:
+        JSON string with constraint definitions
+
+    """
+    logger.debug(f"ListConstraints called for {table_name}")
+
+    # Parse schema.table format
+    if "." in table_name:
+        schema, table = table_name.split(".", 1)
+    else:
+        schema = "dbo"
+        table = table_name
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Query for CHECK and UNIQUE constraints
+            constraints_query = """
+                SELECT
+                    tc.CONSTRAINT_NAME,
+                    tc.CONSTRAINT_TYPE,
+                    COALESCE(ccu.COLUMN_NAME, '') AS COLUMN_NAME,
+                    COALESCE(cc.CHECK_CLAUSE, '') AS CHECK_CLAUSE
+                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                LEFT JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
+                    ON tc.CONSTRAINT_NAME = ccu.CONSTRAINT_NAME
+                    AND tc.TABLE_SCHEMA = ccu.TABLE_SCHEMA
+                    AND tc.TABLE_NAME = ccu.TABLE_NAME
+                LEFT JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+                    ON tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+                WHERE tc.TABLE_SCHEMA = ?
+                  AND tc.TABLE_NAME = ?
+                  AND tc.CONSTRAINT_TYPE IN ('CHECK', 'UNIQUE')
+                ORDER BY tc.CONSTRAINT_TYPE, tc.CONSTRAINT_NAME
+            """
+            cursor.execute(constraints_query, (schema, table))
+
+            constraints = []
+            for row in cursor.fetchall():
+                constraint: dict[str, Any] = {
+                    "name": row.CONSTRAINT_NAME,
+                    "type": row.CONSTRAINT_TYPE,
+                }
+                if row.COLUMN_NAME:
+                    constraint["column"] = row.COLUMN_NAME
+                if row.CHECK_CLAUSE:
+                    constraint["definition"] = row.CHECK_CLAUSE
+
+                constraints.append(constraint)
+
+            # Query for DEFAULT constraints
+            default_query = """
+                SELECT
+                    dc.name AS constraint_name,
+                    c.name AS column_name,
+                    dc.definition AS default_value
+                FROM sys.default_constraints dc
+                JOIN sys.columns c ON dc.parent_object_id = c.object_id
+                    AND dc.parent_column_id = c.column_id
+                WHERE OBJECT_SCHEMA_NAME(dc.parent_object_id) = ?
+                  AND OBJECT_NAME(dc.parent_object_id) = ?
+                ORDER BY c.name
+            """
+            cursor.execute(default_query, (schema, table))
+
+            for row in cursor.fetchall():
+                constraints.append(
+                    {
+                        "name": row.constraint_name,
+                        "type": "DEFAULT",
+                        "column": row.column_name,
+                        "definition": row.default_value,
+                    }
+                )
+
+            return constraints
+        finally:
+            conn.close()
+
+    constraints = await run_in_thread(_query)
+
+    result = {
+        "table": f"{schema}.{table}",
+        "constraint_count": len(constraints),
+        "constraints": constraints,
+    }
+
+    logger.debug(f"Found {len(constraints)} constraints for {table_name}")
+    return json.dumps(result, indent=2)
+
+
 # =============================================================================
 # MCP Resources
 # =============================================================================
