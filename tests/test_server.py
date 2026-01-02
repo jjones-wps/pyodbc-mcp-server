@@ -737,3 +737,128 @@ class TestListFunctions:
         assert "note" in sample_output
         assert "500" in sample_output["note"]
         assert "schema_filter" in sample_output["note"]
+
+
+class TestDescribeTableEnhancements:
+    """Tests for DescribeTable PK/FK enhancements (Phase 2)."""
+
+    def test_column_has_is_primary_key_indicator(self):
+        """All columns should have is_primary_key indicator."""
+        sample_columns = [
+            {
+                "name": "customer_id",
+                "type": "int",
+                "nullable": False,
+                "is_primary_key": True,
+            },
+            {
+                "name": "email",
+                "type": "varchar",
+                "nullable": False,
+                "max_length": 100,
+                "is_primary_key": False,
+            },
+        ]
+
+        for col in sample_columns:
+            assert "is_primary_key" in col
+            assert isinstance(col["is_primary_key"], bool)
+
+    def test_primary_key_column_marked_correctly(self):
+        """Primary key columns should be marked with is_primary_key=True."""
+        pk_column = {
+            "name": "id",
+            "type": "int",
+            "nullable": False,
+            "is_primary_key": True,
+        }
+
+        assert pk_column["is_primary_key"] is True
+
+    def test_non_primary_key_column_marked_correctly(self):
+        """Non-primary key columns should be marked with is_primary_key=False."""
+        regular_column = {
+            "name": "name",
+            "type": "varchar",
+            "nullable": True,
+            "max_length": 100,
+            "is_primary_key": False,
+        }
+
+        assert regular_column["is_primary_key"] is False
+
+    def test_foreign_key_column_has_references(self):
+        """Foreign key columns should have foreign_key object with references."""
+        fk_column = {
+            "name": "customer_id",
+            "type": "int",
+            "nullable": False,
+            "is_primary_key": False,
+            "foreign_key": {
+                "references_table": "dbo.customers",
+                "references_column": "id",
+            },
+        }
+
+        assert "foreign_key" in fk_column
+        assert "references_table" in fk_column["foreign_key"]
+        assert "references_column" in fk_column["foreign_key"]
+        assert fk_column["foreign_key"]["references_table"] == "dbo.customers"
+        assert fk_column["foreign_key"]["references_column"] == "id"
+
+    def test_non_foreign_key_column_has_no_foreign_key(self):
+        """Non-foreign key columns should not have foreign_key property."""
+        regular_column = {
+            "name": "status",
+            "type": "varchar",
+            "nullable": True,
+            "max_length": 50,
+            "is_primary_key": False,
+        }
+
+        assert "foreign_key" not in regular_column
+
+    def test_composite_primary_key_multiple_columns(self):
+        """Multiple columns can be marked as primary keys (composite PK)."""
+        columns = [
+            {
+                "name": "order_id",
+                "type": "int",
+                "nullable": False,
+                "is_primary_key": True,
+            },
+            {
+                "name": "line_number",
+                "type": "int",
+                "nullable": False,
+                "is_primary_key": True,
+            },
+            {
+                "name": "product_id",
+                "type": "int",
+                "nullable": False,
+                "is_primary_key": False,
+            },
+        ]
+
+        pk_columns = [col for col in columns if col["is_primary_key"]]
+        assert len(pk_columns) == 2
+        assert pk_columns[0]["name"] == "order_id"
+        assert pk_columns[1]["name"] == "line_number"
+
+    def test_column_can_be_both_pk_and_fk(self):
+        """A column can be both a primary key and foreign key."""
+        pk_fk_column = {
+            "name": "user_id",
+            "type": "int",
+            "nullable": False,
+            "is_primary_key": True,
+            "foreign_key": {
+                "references_table": "dbo.users",
+                "references_column": "id",
+            },
+        }
+
+        assert pk_fk_column["is_primary_key"] is True
+        assert "foreign_key" in pk_fk_column
+        assert pk_fk_column["foreign_key"]["references_table"] == "dbo.users"

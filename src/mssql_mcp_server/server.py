@@ -187,6 +187,8 @@ async def DescribeTable(table_name: str) -> str:
         conn = create_connection()
         try:
             cursor = conn.cursor()
+
+            # Get column information
             query = """
                 SELECT
                     COLUMN_NAME,
@@ -217,6 +219,50 @@ async def DescribeTable(table_name: str) -> str:
                 if row.COLUMN_DEFAULT:
                     col["default"] = row.COLUMN_DEFAULT
                 columns.append(col)
+
+            # Get primary key columns
+            pk_query = """
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = ?
+                  AND TABLE_NAME = ?
+                  AND CONSTRAINT_NAME IN (
+                      SELECT CONSTRAINT_NAME
+                      FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                      WHERE TABLE_SCHEMA = ?
+                        AND TABLE_NAME = ?
+                        AND CONSTRAINT_TYPE = 'PRIMARY KEY'
+                  )
+            """
+            cursor.execute(pk_query, (schema, table, schema, table))
+            pk_columns = {row.COLUMN_NAME for row in cursor.fetchall()}
+
+            # Get foreign key columns
+            fk_query = """
+                SELECT
+                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS column_name,
+                    OBJECT_SCHEMA_NAME(fkc.referenced_object_id) AS ref_schema,
+                    OBJECT_NAME(fkc.referenced_object_id) AS ref_table,
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ref_column
+                FROM sys.foreign_key_columns fkc
+                WHERE OBJECT_SCHEMA_NAME(fkc.parent_object_id) = ?
+                  AND OBJECT_NAME(fkc.parent_object_id) = ?
+            """
+            cursor.execute(fk_query, (schema, table))
+            fk_map = {
+                row.column_name: {
+                    "references_table": f"{row.ref_schema}.{row.ref_table}",
+                    "references_column": row.ref_column,
+                }
+                for row in cursor.fetchall()
+            }
+
+            # Add PK and FK indicators to columns
+            for col in columns:
+                col["is_primary_key"] = col["name"] in pk_columns
+                if col["name"] in fk_map:
+                    col["foreign_key"] = fk_map[col["name"]]
+
             return columns
         finally:
             conn.close()
