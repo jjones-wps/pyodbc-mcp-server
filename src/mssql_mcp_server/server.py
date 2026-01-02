@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-MSSQL MCP Server - Read-Only Access to SQL Server via Windows Authentication
+"""MSSQL MCP Server - Read-Only Access to SQL Server via Windows Authentication.
 
 A Model Context Protocol (MCP) server that provides safe, read-only access to
 Microsoft SQL Server databases using Windows Authentication (Trusted Connection).
@@ -58,8 +57,7 @@ CONNECTION_TIMEOUT = int(os.environ.get("MSSQL_CONNECTION_TIMEOUT", "30"))
 
 
 def create_connection() -> pyodbc.Connection:
-    """
-    Create a new database connection.
+    """Create a new database connection.
 
     Creates a fresh connection using Windows Authentication.
     Windows ODBC Driver handles connection pooling at the driver level,
@@ -77,8 +75,7 @@ def create_connection() -> pyodbc.Connection:
 
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
-    """
-    Lifespan context manager for server startup/shutdown.
+    """Lifespan context manager for server startup/shutdown.
 
     Logs server initialization and cleanup. Connection pooling is handled
     transparently by the Windows ODBC Driver at the driver level.
@@ -111,14 +108,14 @@ async def run_in_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
 
 @mcp.tool()
 async def ListTables(schema_filter: str | None = None) -> str:
-    """
-    Lists all tables in the SQL Server database.
+    """List all tables in the SQL Server database.
 
     Args:
         schema_filter: Optional schema name to filter tables (e.g., 'dbo')
 
     Returns:
         JSON string with database info and table list
+
     """
     logger.debug(f"ListTables called with schema_filter={schema_filter}")
 
@@ -167,14 +164,14 @@ async def ListTables(schema_filter: str | None = None) -> str:
 
 @mcp.tool()
 async def DescribeTable(table_name: str) -> str:
-    """
-    Returns the schema/structure of a specific table.
+    """Return the schema/structure of a specific table.
 
     Args:
         table_name: Name of the table (can include schema, e.g., 'dbo.oe_hdr')
 
     Returns:
         JSON string with column definitions
+
     """
     logger.debug(f"DescribeTable called for {table_name}")
 
@@ -243,8 +240,7 @@ async def DescribeTable(table_name: str) -> str:
 
 @mcp.tool()
 async def ReadData(query: str, max_rows: int = 100) -> str:
-    """
-    Executes a SELECT query and returns results. Only SELECT statements allowed.
+    """Execute a SELECT query and return results. Only SELECT statements allowed.
 
     Args:
         query: SQL SELECT query to execute
@@ -252,6 +248,7 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
 
     Returns:
         JSON string with query results
+
     """
     logger.debug(f"ReadData called with max_rows={max_rows}")
 
@@ -353,14 +350,14 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
 
 @mcp.tool()
 async def ListViews(schema_filter: str | None = None) -> str:
-    """
-    Lists all views in the SQL Server database.
+    """List all views in the SQL Server database.
 
     Args:
         schema_filter: Optional schema name to filter views (e.g., 'dbo')
 
     Returns:
         JSON string with database info and view list
+
     """
     logger.debug(f"ListViews called with schema_filter={schema_filter}")
 
@@ -408,14 +405,14 @@ async def ListViews(schema_filter: str | None = None) -> str:
 
 @mcp.tool()
 async def GetTableRelationships(table_name: str) -> str:
-    """
-    Returns foreign key relationships for a specific table.
+    """Return foreign key relationships for a specific table.
 
     Args:
         table_name: Name of the table (can include schema, e.g., 'dbo.oe_hdr')
 
     Returns:
         JSON string with incoming and outgoing foreign key relationships
+
     """
     logger.debug(f"GetTableRelationships called for {table_name}")
 
@@ -505,8 +502,7 @@ async def GetTableRelationships(table_name: str) -> str:
 
 @mcp.resource("mssql://tables")
 async def list_tables_resource() -> str:
-    """
-    Resource listing all tables in the database.
+    """Resource listing all tables in the database.
 
     Returns a newline-separated list of all table names.
     """
@@ -533,8 +529,7 @@ async def list_tables_resource() -> str:
 
 @mcp.resource("mssql://views")
 async def list_views_resource() -> str:
-    """
-    Resource listing all views in the database.
+    """Resource listing all views in the database.
 
     Returns a newline-separated list of all view names.
     """
@@ -560,13 +555,13 @@ async def list_views_resource() -> str:
 
 @mcp.resource("mssql://schema/{schema_name}")
 async def list_schema_tables_resource(schema_name: str) -> str:
-    """
-    Resource listing all tables in a specific schema.
+    """Resource listing all tables in a specific schema.
 
     Args:
         schema_name: The schema to list tables from (e.g., 'dbo')
 
     Returns a newline-separated list of table names in the schema.
+
     """
     logger.debug(f"Accessing schema resource for {schema_name}")
 
@@ -594,13 +589,13 @@ async def list_schema_tables_resource(schema_name: str) -> str:
 
 @mcp.resource("mssql://table/{table_name}/preview")
 async def table_preview_resource(table_name: str) -> str:
-    """
-    Resource providing a preview of table data (first 10 rows).
+    """Resource providing a preview of table data (first 10 rows).
 
     Args:
         table_name: The table to preview (e.g., 'dbo.customers')
 
     Returns JSON with column info and sample data.
+
     """
     logger.debug(f"Accessing table preview for {table_name}")
 
@@ -665,8 +660,7 @@ async def table_preview_resource(table_name: str) -> str:
 
 @mcp.resource("mssql://info")
 async def database_info_resource() -> str:
-    """
-    Resource providing database connection information.
+    """Resource providing database connection information.
 
     Returns JSON with server, database, and basic statistics.
     """
