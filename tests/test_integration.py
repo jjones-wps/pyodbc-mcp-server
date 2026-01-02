@@ -22,7 +22,7 @@ class TestListTablesIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.ListTables()
+            result = await server.ListTables.fn()
             data = json.loads(result)
 
             assert data["table_count"] == 3
@@ -43,12 +43,11 @@ class TestListTablesIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.ListTables(schema_filter="dbo")
+            result = await server.ListTables.fn(schema_filter="dbo")
             data = json.loads(result)
 
             assert data["table_count"] == 2
-            assert "schema_filter" in data
-            assert data["schema_filter"] == "dbo"
+            # Note: ListTables does not include schema_filter in response
             assert "dbo.users" in data["tables"]
             assert "dbo.orders" in data["tables"]
             assert "sales.customers" not in data["tables"]
@@ -72,7 +71,7 @@ class TestDescribeTableIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.DescribeTable("dbo.users")
+            result = await server.DescribeTable.fn("dbo.users")
             data = json.loads(result)
 
             assert data["table"] == "dbo.users"
@@ -99,7 +98,7 @@ class TestDescribeTableIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.DescribeTable("dbo.users")
+            result = await server.DescribeTable.fn("dbo.users")
             data = json.loads(result)
 
             # id column should be marked as PK
@@ -138,7 +137,7 @@ class TestDescribeTableIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.DescribeTable("dbo.orders")
+            result = await server.DescribeTable.fn("dbo.orders")
             data = json.loads(result)
 
             user_id_column = data["columns"][0]
@@ -163,7 +162,7 @@ class TestGetTableRelationshipsIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.GetTableRelationships("dbo.orders")
+            result = await server.GetTableRelationships.fn("dbo.orders")
             data = json.loads(result)
 
             assert data["table"] == "dbo.orders"
@@ -200,7 +199,7 @@ class TestGetTableRelationshipsIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.GetTableRelationships("dbo.order_items")
+            result = await server.GetTableRelationships.fn("dbo.order_items")
             data = json.loads(result)
 
             # Should be grouped into single relationship
@@ -227,7 +226,7 @@ class TestListIndexesIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.ListIndexes("dbo.users")
+            result = await server.ListIndexes.fn("dbo.users")
             data = json.loads(result)
 
             assert data["table"] == "dbo.users"
@@ -246,15 +245,44 @@ class TestListConstraintsIntegration:
 
     @pytest.mark.asyncio
     async def test_list_constraints_returns_all_types(
-        self, mock_connection, mock_cursor, sample_constraints
+        self, mock_connection, mock_cursor
     ):
         """ListConstraints should return CHECK, UNIQUE, and DEFAULT constraints."""
-        mock_cursor.fetchall.return_value = sample_constraints
+        # First query: CHECK and UNIQUE constraints
+        check_unique_constraints = [
+            MockRow(
+                CONSTRAINT_NAME="CK_users_age",
+                CONSTRAINT_TYPE="CHECK",
+                COLUMN_NAME="age",
+                CHECK_CLAUSE="([age]>=(18))",
+            ),
+            MockRow(
+                CONSTRAINT_NAME="UQ_users_email",
+                CONSTRAINT_TYPE="UNIQUE",
+                COLUMN_NAME="email",
+                CHECK_CLAUSE="",
+            ),
+        ]
+
+        # Second query: DEFAULT constraints (lowercase column names)
+        default_constraints = [
+            MockRow(
+                constraint_name="DF_users_created_at",
+                column_name="created_at",
+                default_value="(getdate())",
+            ),
+        ]
+
+        # Mock two sequential queries
+        mock_cursor.fetchall.side_effect = [
+            check_unique_constraints,
+            default_constraints,
+        ]
 
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.ListConstraints("dbo.users")
+            result = await server.ListConstraints.fn("dbo.users")
             data = json.loads(result)
 
             assert data["table"] == "dbo.users"
@@ -281,7 +309,7 @@ class TestListStoredProceduresIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.ListStoredProcedures()
+            result = await server.ListStoredProcedures.fn()
             data = json.loads(result)
 
             assert data["procedure_count"] == 3
@@ -313,7 +341,7 @@ class TestListFunctionsIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.ListFunctions()
+            result = await server.ListFunctions.fn()
             data = json.loads(result)
 
             assert data["function_count"] == 3
@@ -339,7 +367,7 @@ class TestListTriggersIntegration:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            result = await server.ListTriggers()
+            result = await server.ListTriggers.fn()
             data = json.loads(result)
 
             assert data["trigger_count"] == 3

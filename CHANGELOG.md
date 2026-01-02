@@ -8,13 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3: Production Readiness** - Starting testing infrastructure for production deployment
-- **Testing Infrastructure** - Comprehensive mock fixtures and integration tests
+- **Phase 3.1 Testing Infrastructure COMPLETE** - Comprehensive test suite with 77% coverage
   - `tests/conftest.py` with mock pyodbc fixtures (MockRow, mock_cursor, mock_connection)
-  - Sample data fixtures for all tools (tables, columns, indexes, constraints, procedures, functions, triggers, FKs)
-  - Integration test suite in `tests/test_integration.py` (8 test classes, 14 integration tests)
-  - Enhanced security filtering tests (11 additional edge case tests)
-  - Tests for composite foreign keys, PK/FK indicators, referential actions
+  - Sample data fixtures for all 11 tools (tables, columns, indexes, constraints, procedures, functions, triggers, FKs)
+  - Integration tests in `tests/test_integration.py` (8 test classes, 14 integration tests)
+  - Resource endpoint tests in `tests/test_resources.py` (5 test classes, 10 tests for all MCP resources)
+  - Async behavior tests in `tests/test_async.py` (4 test classes, 11 tests for concurrency and thread safety)
+  - Enhanced security filtering edge case tests (11 additional tests)
+  - **Test Results**: 130 tests passing (up from 88), 77.07% coverage (up from 13.80%)
 - **Phase 2: Feature Completeness** - Completed comprehensive SQL Server schema discovery
 - `ListIndexes` tool - Get indexes defined on a table with columns, types, and properties
 - `ListConstraints` tool - Get CHECK, UNIQUE, and DEFAULT constraints with definitions

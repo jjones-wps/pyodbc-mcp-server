@@ -121,19 +121,22 @@ def sample_constraints():
     """Sample constraint data for testing ListConstraints."""
     return [
         MockRow(
-            constraint_name="CK_users_age",
-            constraint_type="CHECK",
-            definition="([age]>=(18))",
+            CONSTRAINT_NAME="CK_users_age",
+            CONSTRAINT_TYPE="CHECK",
+            COLUMN_NAME="age",
+            CHECK_CLAUSE="([age]>=(18))",
         ),
         MockRow(
-            constraint_name="UQ_users_email",
-            constraint_type="UNIQUE",
-            definition=None,
+            CONSTRAINT_NAME="UQ_users_email",
+            CONSTRAINT_TYPE="UNIQUE",
+            COLUMN_NAME="email",
+            CHECK_CLAUSE="",
         ),
         MockRow(
-            constraint_name="DF_users_created_at",
-            constraint_type="DEFAULT",
-            definition="(getdate())",
+            CONSTRAINT_NAME="DF_users_created_at",
+            CONSTRAINT_TYPE="DEFAULT",
+            COLUMN_NAME="created_at",
+            CHECK_CLAUSE="",
         ),
     ]
 
