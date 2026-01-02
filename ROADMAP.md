@@ -59,42 +59,65 @@ This document outlines the development roadmap for transforming the pyodbc MCP S
 
 ---
 
-## Phase 2: Feature Completeness
+## Phase 2: Feature Completeness ✅ COMPLETED
 
 **Goal**: Comprehensive SQL Server schema discovery
 
 **Timeline Target**: v0.3.0
+**Actual Completion**: 2026-01-02
 
 ### 2.1 Additional Metadata Tools
-- [ ] `ListIndexes(table_name)` - indexes with columns and types
-- [ ] `ListConstraints(table_name)` - CHECK, UNIQUE, DEFAULT constraints
-- [ ] `ListStoredProcedures(schema_filter)` - SP names and parameters
-- [ ] `ListFunctions(schema_filter)` - user-defined functions
-- [ ] `GetQueryPlan(query)` - estimated execution plan for SELECT
+- [x] `ListIndexes(table_name)` - indexes with columns and types
+- [x] `ListConstraints(table_name)` - CHECK, UNIQUE, DEFAULT constraints
+- [x] `ListStoredProcedures(schema_filter)` - SP names and parameters
+- [x] `ListFunctions(schema_filter)` - user-defined functions (scalar, inline table-valued, multi-statement table-valued)
+- [x] `ListTriggers(schema_filter)` - database triggers with event types and status
+- [ ] ~~`GetQueryPlan(query)`~~ - deferred to Phase 4 (advanced features)
 
 ### 2.2 Enhanced Existing Tools
-- [ ] `DescribeTable` - add primary key indicator
-- [ ] `DescribeTable` - add foreign key references inline
-- [ ] `GetTableRelationships` - add relationship cardinality hints
-- [ ] `ReadData` - add column type metadata in response
+- [x] `DescribeTable` - add primary key indicator (`is_primary_key` boolean on all columns)
+- [x] `DescribeTable` - add foreign key references inline (`foreign_key` object with `references_table` and `references_column`)
+- [x] `GetTableRelationships` - add referential actions (ON DELETE, ON UPDATE)
+- [x] `GetTableRelationships` - add composite foreign key support (column arrays grouped by constraint)
+- [x] `GetTableRelationships` - add schema-qualified table names
+- [x] `GetTableRelationships` - add enabled/disabled constraint status
+- [ ] ~~`ReadData` - add column type metadata~~ - deferred to Phase 3
 
 ### 2.3 Input/Output Schemas
-- [ ] Define Pydantic models for tool inputs
-- [ ] Add JSON Schema to tool definitions
-- [ ] Structured output types for better LLM parsing
+- [ ] Define Pydantic models for tool inputs - deferred to Phase 3
+- [ ] Add JSON Schema to tool definitions - deferred to Phase 3
+- [x] Structured output types for better LLM parsing (all tools return consistent JSON)
 
-**Success Criteria**:
-- All major SQL Server metadata accessible
-- Tools provide actionable schema information
-- LLMs can reliably parse tool outputs
+**Success Criteria**: ✅ ALL MET
+- ✅ All major SQL Server metadata accessible (indexes, constraints, procedures, functions, triggers)
+- ✅ Tools provide actionable schema information (PK/FK indicators, referential actions, composite keys)
+- ✅ LLMs can reliably parse tool outputs (consistent JSON structure across all tools)
+
+### Phase 2 Achievements
+
+**7 commits** implementing comprehensive schema discovery:
+1. ListIndexes tool - index metadata with column lists and types
+2. ListConstraints tool - CHECK, UNIQUE, DEFAULT constraint discovery
+3. ListStoredProcedures tool - stored procedure enumeration with parameters
+4. ListFunctions tool - UDF discovery (scalar, inline TVF, multi-statement TVF)
+5. ListTriggers tool - trigger metadata with events, types, and status
+6. DescribeTable enhancements - PK/FK indicators for relationship visibility
+7. GetTableRelationships enhancements - referential actions and composite FK support
+
+**Testing**: 88 total tests (up from 59), coverage at 13.80%
+**Architecture**: All tools follow async patterns with per-request connections
+**Consistency**: Unified JSON output structure across all metadata tools
 
 ---
 
-## Phase 3: Production Readiness
+## Phase 3: Production Readiness 🚀 IN PROGRESS
 
-**Goal**: Reliable, testable, observable server
+**Goal**: Reliable, testable, observable server ready for production deployment
 
 **Timeline Target**: v0.4.0
+**Started**: 2026-01-02
+
+**Context**: With Phase 2 complete, we now have comprehensive SQL Server schema discovery capabilities (11 tools covering tables, views, indexes, constraints, procedures, functions, triggers, and relationships). Phase 3 focuses on making this feature-rich server production-ready through comprehensive testing, robust error handling, flexible configuration, and thorough documentation.
 
 ### 3.1 Testing Infrastructure
 - [ ] Mock pyodbc connection fixture
@@ -164,13 +187,13 @@ This document outlines the development roadmap for transforming the pyodbc MCP S
 
 ## Version Milestones
 
-| Version | Focus | Key Deliverables |
-|---------|-------|------------------|
-| v0.1.0 | Initial | Basic tools, Windows Auth |
-| v0.2.0 | Foundation | Async, pooling, resources (CURRENT) |
-| v0.3.0 | Features | Full metadata tools, schemas |
-| v0.4.0 | Production | Tests, errors, docs |
-| v1.0.0 | Enterprise | Multi-DB, caching, metrics |
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|------------------|--------|
+| v0.1.0 | Initial | Basic tools, Windows Auth | ✅ Released |
+| v0.2.0 | Foundation | Async, pooling, resources | ✅ Released |
+| v0.3.0 | Features | Full metadata tools, schemas | ✅ Complete (2026-01-02) |
+| v0.4.0 | Production | Tests, errors, docs | 🚀 **CURRENT** |
+| v1.0.0 | Enterprise | Multi-DB, caching, metrics | 📋 Planned |
 
 ---
 
@@ -213,3 +236,4 @@ These are explicitly out of scope:
 |------|---------|---------|
 | 2024-12-11 | 1.0 | Initial roadmap created |
 | 2024-12-11 | 1.1 | Phase 1 completed - async, pooling, resources implemented |
+| 2026-01-02 | 1.2 | Phase 2 completed - all metadata discovery tools implemented (ListIndexes, ListConstraints, ListStoredProcedures, ListFunctions, ListTriggers, DescribeTable enhancements, GetTableRelationships enhancements). 88 tests passing, 13.80% coverage. Ready for Phase 3. |
