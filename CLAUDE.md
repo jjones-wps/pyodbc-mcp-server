@@ -40,6 +40,8 @@ mypy src
 | `MSSQL_DATABASE` | `master` | Target database |
 | `ODBC_DRIVER` | `ODBC Driver 17 for SQL Server` | ODBC driver name |
 
+**⚠️ SECURITY WARNING**: Never store sensitive credentials in `.env` files within the repository directory. Use `.env.example` as a template and create your local `.env` file outside the repository, or use GitHub Secrets for CI/CD tokens.
+
 ## Architecture
 
 ### Single-File Server Design
