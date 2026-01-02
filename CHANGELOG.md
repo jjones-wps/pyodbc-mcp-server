@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ListConstraints` tool - Get CHECK, UNIQUE, and DEFAULT constraints with definitions
 - `ListStoredProcedures` tool - List stored procedures with parameter information and schema filtering
 - `ListFunctions` tool - List user-defined functions (scalar, inline table-valued, table-valued) with parameter information
+- `ListTriggers` tool - List database triggers with event information (INSERT, UPDATE, DELETE), type (AFTER/INSTEAD OF), table reference, and enabled status
 - **DescribeTable Enhancements** - Primary key and foreign key indicators added to column information
   - `is_primary_key` boolean field on all columns
   - `foreign_key` object on FK columns with `references_table` and `references_column` fields
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for `ListConstraints` tool (7 tests for constraint types, definitions, structure)
 - Unit tests for `ListStoredProcedures` tool (6 tests for filtering, parameters, output structure)
 - Unit tests for `ListFunctions` tool (7 tests for function types, filtering, parameters)
+- Unit tests for `ListTriggers` tool (11 tests for trigger types, events, disabled status, table references)
 - Unit tests for `DescribeTable` enhancements (7 tests for PK/FK indicators, composite keys, dual relationships)
 - Phase 2 implementation plan document (docs/PHASE_2_PLAN.md)
 

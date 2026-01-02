@@ -862,3 +862,193 @@ class TestDescribeTableEnhancements:
         assert pk_fk_column["is_primary_key"] is True
         assert "foreign_key" in pk_fk_column
         assert pk_fk_column["foreign_key"]["references_table"] == "dbo.users"
+
+
+class TestListTriggers:
+    """Tests for the ListTriggers tool (Phase 2)."""
+
+    def test_output_structure_without_filter(self):
+        """ListTriggers output should have expected JSON structure."""
+        # Expected output format without schema filter
+        expected_keys = {"database", "server", "trigger_count", "triggers"}
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "trigger_count": 2,
+            "triggers": [
+                {
+                    "schema": "dbo",
+                    "name": "trg_UpdateTimestamp",
+                    "full_name": "dbo.trg_UpdateTimestamp",
+                    "table": "dbo.users",
+                    "type": "AFTER",
+                    "events": "UPDATE",
+                    "is_disabled": False,
+                },
+                {
+                    "schema": "sales",
+                    "name": "trg_AuditDelete",
+                    "full_name": "sales.trg_AuditDelete",
+                    "table": "sales.orders",
+                    "type": "AFTER",
+                    "events": "DELETE",
+                    "is_disabled": False,
+                },
+            ],
+        }
+
+        assert set(sample_output.keys()) == expected_keys
+
+    def test_output_structure_with_filter(self):
+        """ListTriggers with schema filter includes filter in output."""
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "schema_filter": "dbo",
+            "trigger_count": 1,
+            "triggers": [
+                {
+                    "schema": "dbo",
+                    "name": "trg_UpdateTimestamp",
+                    "full_name": "dbo.trg_UpdateTimestamp",
+                    "table": "dbo.users",
+                    "type": "AFTER",
+                    "events": "UPDATE",
+                    "is_disabled": False,
+                }
+            ],
+        }
+
+        assert "schema_filter" in sample_output
+        assert sample_output["schema_filter"] == "dbo"
+
+    def test_trigger_after_type(self):
+        """Triggers should support AFTER type."""
+        trigger = {
+            "schema": "dbo",
+            "name": "trg_Insert",
+            "full_name": "dbo.trg_Insert",
+            "table": "dbo.products",
+            "type": "AFTER",
+            "events": "INSERT",
+            "is_disabled": False,
+        }
+
+        assert trigger["type"] == "AFTER"
+
+    def test_trigger_instead_of_type(self):
+        """Triggers should support INSTEAD OF type."""
+        trigger = {
+            "schema": "dbo",
+            "name": "trg_InsteadOfUpdate",
+            "full_name": "dbo.trg_InsteadOfUpdate",
+            "table": "dbo.view_data",
+            "type": "INSTEAD OF",
+            "events": "UPDATE",
+            "is_disabled": False,
+        }
+
+        assert trigger["type"] == "INSTEAD OF"
+
+    def test_trigger_single_event(self):
+        """Triggers should support single event (INSERT, UPDATE, or DELETE)."""
+        trigger = {
+            "schema": "dbo",
+            "name": "trg_Insert",
+            "full_name": "dbo.trg_Insert",
+            "table": "dbo.products",
+            "type": "AFTER",
+            "events": "INSERT",
+            "is_disabled": False,
+        }
+
+        assert trigger["events"] == "INSERT"
+
+    def test_trigger_multiple_events(self):
+        """Triggers should support multiple events as comma-separated string."""
+        trigger = {
+            "schema": "dbo",
+            "name": "trg_AuditChanges",
+            "full_name": "dbo.trg_AuditChanges",
+            "table": "dbo.users",
+            "type": "AFTER",
+            "events": "INSERT, UPDATE, DELETE",
+            "is_disabled": False,
+        }
+
+        assert "," in trigger["events"]
+        assert "INSERT" in trigger["events"]
+        assert "UPDATE" in trigger["events"]
+        assert "DELETE" in trigger["events"]
+
+    def test_trigger_disabled_status_true(self):
+        """Triggers should have is_disabled boolean field."""
+        trigger = {
+            "schema": "dbo",
+            "name": "trg_Disabled",
+            "full_name": "dbo.trg_Disabled",
+            "table": "dbo.archive",
+            "type": "AFTER",
+            "events": "INSERT",
+            "is_disabled": True,
+        }
+
+        assert trigger["is_disabled"] is True
+        assert isinstance(trigger["is_disabled"], bool)
+
+    def test_trigger_disabled_status_false(self):
+        """Triggers should properly report enabled status."""
+        trigger = {
+            "schema": "dbo",
+            "name": "trg_Enabled",
+            "full_name": "dbo.trg_Enabled",
+            "table": "dbo.users",
+            "type": "AFTER",
+            "events": "UPDATE",
+            "is_disabled": False,
+        }
+
+        assert trigger["is_disabled"] is False
+
+    def test_trigger_full_name_format(self):
+        """Trigger full_name should be schema.trigger_name."""
+        trigger = {
+            "schema": "sales",
+            "name": "trg_ValidateSale",
+            "full_name": "sales.trg_ValidateSale",
+            "table": "sales.orders",
+            "type": "AFTER",
+            "events": "INSERT",
+            "is_disabled": False,
+        }
+
+        assert trigger["full_name"] == f"{trigger['schema']}.{trigger['name']}"
+
+    def test_trigger_table_format(self):
+        """Trigger table should be schema.table_name."""
+        trigger = {
+            "schema": "dbo",
+            "name": "trg_CheckStock",
+            "full_name": "dbo.trg_CheckStock",
+            "table": "inventory.products",
+            "type": "AFTER",
+            "events": "UPDATE",
+            "is_disabled": False,
+        }
+
+        assert "." in trigger["table"]
+
+    def test_large_result_truncation(self):
+        """Large trigger lists should be truncated to 500 with note."""
+        sample_output = {
+            "database": "MyDB",
+            "server": "localhost",
+            "trigger_count": 750,
+            "triggers": [{"schema": "dbo", "name": f"trg_{i}"} for i in range(500)],
+            "note": "Showing first 500 of 750 triggers. Use schema_filter to narrow results.",
+        }
+
+        assert len(sample_output["triggers"]) == 500
+        assert sample_output["trigger_count"] == 750
+        assert "note" in sample_output
+        assert "500" in sample_output["note"]

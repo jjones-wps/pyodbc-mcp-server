@@ -872,6 +872,91 @@ async def ListFunctions(schema_filter: str | None = None) -> str:
     return json.dumps(result, indent=2)
 
 
+@mcp.tool()
+async def ListTriggers(schema_filter: str | None = None) -> str:
+    """List triggers in the database with event and type information.
+
+    Args:
+        schema_filter: Optional schema name to filter triggers (e.g., 'dbo').
+
+    Returns:
+        JSON string containing trigger metadata including name, schema, table,
+        type (AFTER/INSTEAD OF), events (INSERT, UPDATE, DELETE), and enabled status.
+
+    """
+    logger.debug(f"ListTriggers called with schema_filter={schema_filter}")
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    SCHEMA_NAME(o.schema_id) AS schema_name,
+                    tr.name AS trigger_name,
+                    OBJECT_NAME(tr.parent_id) AS table_name,
+                    CASE tr.is_instead_of_trigger
+                        WHEN 1 THEN 'INSTEAD OF'
+                        ELSE 'AFTER'
+                    END AS trigger_type,
+                    tr.is_disabled,
+                    STUFF((
+                        SELECT ', ' + te.type_desc
+                        FROM sys.trigger_events te
+                        WHERE te.object_id = tr.object_id
+                        ORDER BY te.type_desc
+                        FOR XML PATH('')
+                    ), 1, 2, '') AS events
+                FROM sys.triggers tr
+                INNER JOIN sys.objects o ON tr.parent_id = o.object_id
+                WHERE SCHEMA_NAME(o.schema_id) = COALESCE(?, SCHEMA_NAME(o.schema_id))
+                ORDER BY schema_name, trigger_name
+            """
+            if schema_filter:
+                cursor.execute(query, (schema_filter,))
+            else:
+                cursor.execute(query, (None,))
+
+            triggers = []
+            for row in cursor.fetchall():
+                trigger: dict[str, Any] = {
+                    "schema": row.schema_name,
+                    "name": row.trigger_name,
+                    "full_name": f"{row.schema_name}.{row.trigger_name}",
+                    "table": f"{row.schema_name}.{row.table_name}",
+                    "type": row.trigger_type,
+                    "events": row.events if row.events else None,
+                    "is_disabled": bool(row.is_disabled),
+                }
+                triggers.append(trigger)
+
+            return triggers
+        finally:
+            conn.close()
+
+    triggers = await run_in_thread(_query)
+
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "trigger_count": len(triggers),
+        "triggers": triggers[:500],
+    }
+
+    if schema_filter:
+        result["schema_filter"] = schema_filter
+
+    if len(triggers) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(triggers)} triggers. "
+            "Use schema_filter to narrow results."
+        )
+
+    logger.debug(f"Found {len(triggers)} triggers")
+    return json.dumps(result, indent=2)
+
+
 # =============================================================================
 # MCP Resources
 # =============================================================================
