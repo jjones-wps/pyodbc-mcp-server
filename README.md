@@ -1,5 +1,9 @@
 # pyodbc MCP Server
 
+[![PyPI version](https://badge.fury.io/py/pyodbc-mcp-server.svg)](https://pypi.org/project/pyodbc-mcp-server/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides **read-only** access to Microsoft SQL Server databases using **Windows Authentication**.
 
 Built for environments where:
@@ -7,6 +11,18 @@ Built for environments where:
 - 🛡️ **Read-only access is mandated** by IT security policy
 - 🖥️ **SQL Server is accessed from Windows workstations**
 - 🤖 **AI assistants need safe database access** (Claude Code, etc.)
+
+## 🆕 What's New in v0.4.0 (Production Ready!)
+
+Version 0.4.0 marks the **first production-ready release** with:
+
+- ✅ **Published on PyPI** - Simple `pip install pyodbc-mcp-server`
+- ✅ **Comprehensive Testing** - 193 tests, 83% code coverage
+- ✅ **Professional Configuration** - CLI args, TOML files, environment variables
+- ✅ **Robust Error Handling** - Typed exceptions with automatic retry logic
+- ✅ **Complete Documentation** - 4,893 lines across 5 guides (API, Config, Troubleshooting, Examples, Development)
+
+**Upgrade from pre-release versions**: `pip install --upgrade pyodbc-mcp-server`
 
 ## Features
 
@@ -38,30 +54,40 @@ Built for environments where:
 
 ## Installation
 
-### Prerequisites
+### 🚀 Quick Install (Recommended)
 
-- Python 3.10+
-- Windows with ODBC Driver 17+ for SQL Server
-- Network access to your SQL Server
-- Windows domain account with SELECT permissions on target database
-
-### Install from PyPI
+The package is available on PyPI and ready for production use:
 
 ```bash
 pip install pyodbc-mcp-server
 ```
 
-### Install from Source
+**That's it!** The server is now available as the `pyodbc-mcp-server` command.
+
+> **📦 Latest Release**: v0.4.0 (Production Ready)
+> **📚 Full Documentation**: [docs/](docs/)
+> **🔗 PyPI Package**: [pypi.org/project/pyodbc-mcp-server](https://pypi.org/project/pyodbc-mcp-server/)
+
+### Prerequisites
+
+- **Python 3.10+** (tested on 3.10, 3.11, 3.12)
+- **Windows** with ODBC Driver 17+ for SQL Server
+- **Network access** to your SQL Server
+- **Windows domain account** with SELECT permissions on target database
+
+### Install ODBC Driver (if needed)
+
+If you don't have the ODBC driver installed, download [Microsoft ODBC Driver 17 for SQL Server](https://docs.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server).
+
+### Alternative: Install from Source
+
+For development or the latest unreleased features:
 
 ```bash
 git clone https://github.com/jjones-wps/pyodbc-mcp-server.git
 cd pyodbc-mcp-server
-pip install -e .
+pip install -e ".[dev]"
 ```
-
-### Install ODBC Driver (if needed)
-
-Download and install [Microsoft ODBC Driver 17 for SQL Server](https://docs.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server).
 
 ## Configuration
 
@@ -122,11 +148,13 @@ mssql-mcp-server --config config.toml --database AdventureWorks --query-timeout 
 
 #### Quick Install via CLI (Recommended)
 
-The easiest way to add this MCP server to Claude Code:
+Since the package is on PyPI, adding to Claude Code is simple:
 
 ```bash
 claude mcp add mssql --transport stdio -e MSSQL_SERVER=your-server -e MSSQL_DATABASE=your-database -- pyodbc-mcp-server
 ```
+
+> **Note**: Claude Code will automatically use the PyPI package. No need to specify installation paths!
 
 **With all environment variables:**
 
@@ -188,8 +216,7 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 {
   "mcpServers": {
     "mssql": {
-      "command": "python",
-      "args": ["-m", "mssql_mcp_server"],
+      "command": "pyodbc-mcp-server",
       "env": {
         "MSSQL_SERVER": "your-sql-server",
         "MSSQL_DATABASE": "your-database"
@@ -198,6 +225,8 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
   }
 }
 ```
+
+> **Note**: Since v0.4.0, `pyodbc-mcp-server` is installed as a command-line tool. For older installations, use `"command": "python", "args": ["-m", "mssql_mcp_server"]`.
 
 ## Usage Examples
 
