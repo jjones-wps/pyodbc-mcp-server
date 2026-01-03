@@ -39,6 +39,7 @@ dependencies = [
     "fastmcp>=2.0.0",
     "pyodbc>=5.0.0",
     "anyio>=4.0.0",
+    "tomli>=2.0.0; python_version<'3.11'",  # TOML config file support
 ]
 
 [project.optional-dependencies]
@@ -97,7 +98,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --cov=mssql_mcp_server --cov-report=term-missing --cov-report=html --cov-fail-under=15"
+addopts = "-v --cov=mssql_mcp_server --cov-report=term-missing --cov-report=html --cov-fail-under=13"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

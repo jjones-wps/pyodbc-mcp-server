@@ -38,22 +38,56 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anyio
 import pyodbc
 from fastmcp import FastMCP
 
+if TYPE_CHECKING:
+    from mssql_mcp_server.config import ServerConfig
+
 # Configure logging
 logger = logging.getLogger("mssql_mcp_server")
 
-# Configuration from environment
+# Global configuration (loaded at startup)
+# Will be initialized in main() or when imported
+_config: "ServerConfig | None" = None
+
+# Legacy environment variable support (will be removed in v1.0.0)
 MSSQL_SERVER = os.environ.get("MSSQL_SERVER", "localhost")
 MSSQL_DATABASE = os.environ.get("MSSQL_DATABASE", "master")
 ODBC_DRIVER = os.environ.get("ODBC_DRIVER", "ODBC Driver 17 for SQL Server")
-
-# Connection settings
 CONNECTION_TIMEOUT = int(os.environ.get("MSSQL_CONNECTION_TIMEOUT", "30"))
+
+
+def set_config(config: "ServerConfig") -> None:
+    """Set global server configuration.
+
+    Args:
+        config: Server configuration to use
+
+    """
+    global _config
+    _config = config
+
+
+def get_config() -> tuple[str, str, str, int]:
+    """Get current configuration values.
+
+    Returns:
+        Tuple of (server, database, driver, timeout)
+
+    """
+    if _config:
+        return (
+            _config.server,
+            _config.database,
+            _config.driver,
+            _config.connection_timeout,
+        )
+    # Fall back to environment variables
+    return (MSSQL_SERVER, MSSQL_DATABASE, ODBC_DRIVER, CONNECTION_TIMEOUT)
 
 
 def create_connection() -> pyodbc.Connection:
@@ -63,14 +97,15 @@ def create_connection() -> pyodbc.Connection:
     Windows ODBC Driver handles connection pooling at the driver level,
     so we don't need application-level pooling.
     """
+    server, database, driver, timeout = get_config()
     conn_str = (
-        f"DRIVER={{{ODBC_DRIVER}}};"
-        f"SERVER={MSSQL_SERVER};"
-        f"DATABASE={MSSQL_DATABASE};"
+        f"DRIVER={{{driver}}};"
+        f"SERVER={server};"
+        f"DATABASE={database};"
         f"Trusted_Connection=yes;"
         f"TrustServerCertificate=yes;"
     )
-    return pyodbc.connect(conn_str, timeout=CONNECTION_TIMEOUT)
+    return pyodbc.connect(conn_str, timeout=timeout)
 
 
 @asynccontextmanager
@@ -80,14 +115,13 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     Logs server initialization and cleanup. Connection pooling is handled
     transparently by the Windows ODBC Driver at the driver level.
     """
-    logger.info(
-        f"Starting MSSQL MCP Server: server={MSSQL_SERVER}, database={MSSQL_DATABASE}"
-    )
+    server_name, database, _, _ = get_config()
+    logger.info(f"Starting MSSQL MCP Server: server={server_name}, database={database}")
     logger.info(
         "Using per-request connections (ODBC driver handles pooling at driver level)"
     )
 
-    yield {"server": MSSQL_SERVER, "database": MSSQL_DATABASE}
+    yield {"server": server_name, "database": database}
 
     logger.info("Shutting down MSSQL MCP Server")
 
@@ -187,6 +221,8 @@ async def DescribeTable(table_name: str) -> str:
         conn = create_connection()
         try:
             cursor = conn.cursor()
+
+            # Get column information
             query = """
                 SELECT
                     COLUMN_NAME,
@@ -217,6 +253,50 @@ async def DescribeTable(table_name: str) -> str:
                 if row.COLUMN_DEFAULT:
                     col["default"] = row.COLUMN_DEFAULT
                 columns.append(col)
+
+            # Get primary key columns
+            pk_query = """
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = ?
+                  AND TABLE_NAME = ?
+                  AND CONSTRAINT_NAME IN (
+                      SELECT CONSTRAINT_NAME
+                      FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                      WHERE TABLE_SCHEMA = ?
+                        AND TABLE_NAME = ?
+                        AND CONSTRAINT_TYPE = 'PRIMARY KEY'
+                  )
+            """
+            cursor.execute(pk_query, (schema, table, schema, table))
+            pk_columns = {row.COLUMN_NAME for row in cursor.fetchall()}
+
+            # Get foreign key columns
+            fk_query = """
+                SELECT
+                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS column_name,
+                    OBJECT_SCHEMA_NAME(fkc.referenced_object_id) AS ref_schema,
+                    OBJECT_NAME(fkc.referenced_object_id) AS ref_table,
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ref_column
+                FROM sys.foreign_key_columns fkc
+                WHERE OBJECT_SCHEMA_NAME(fkc.parent_object_id) = ?
+                  AND OBJECT_NAME(fkc.parent_object_id) = ?
+            """
+            cursor.execute(fk_query, (schema, table))
+            fk_map = {
+                row.column_name: {
+                    "references_table": f"{row.ref_schema}.{row.ref_table}",
+                    "references_column": row.ref_column,
+                }
+                for row in cursor.fetchall()
+            }
+
+            # Add PK and FK indicators to columns
+            for col in columns:
+                col["is_primary_key"] = col["name"] in pk_columns
+                if col["name"] in fk_map:
+                    col["foreign_key"] = fk_map[col["name"]]
+
             return columns
         finally:
             conn.close()
@@ -411,7 +491,12 @@ async def GetTableRelationships(table_name: str) -> str:
         table_name: Name of the table (can include schema, e.g., 'dbo.oe_hdr')
 
     Returns:
-        JSON string with incoming and outgoing foreign key relationships
+        JSON string with incoming and outgoing foreign key relationships including:
+        - Constraint names
+        - Column mappings (supports composite foreign keys)
+        - Referential actions (ON DELETE, ON UPDATE)
+        - Enabled/disabled status
+        - Full schema-qualified table names
 
     """
     logger.debug(f"GetTableRelationships called for {table_name}")
@@ -423,7 +508,7 @@ async def GetTableRelationships(table_name: str) -> str:
         schema = "dbo"
         table = table_name
 
-    def _query() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    def _query() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Execute query with per-request connection (thread-safe)."""
         conn = create_connection()
         try:
@@ -433,24 +518,42 @@ async def GetTableRelationships(table_name: str) -> str:
             outgoing_query = """
                 SELECT
                     fk.name AS constraint_name,
+                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS referenced_schema,
                     OBJECT_NAME(fk.referenced_object_id) AS referenced_table,
                     COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS column_name,
-                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column,
+                    fk.delete_referential_action_desc AS on_delete,
+                    fk.update_referential_action_desc AS on_update,
+                    fk.is_disabled,
+                    fkc.constraint_column_id
                 FROM sys.foreign_keys fk
                 JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
                 WHERE OBJECT_NAME(fk.parent_object_id) = ?
                   AND OBJECT_SCHEMA_NAME(fk.parent_object_id) = ?
+                ORDER BY fk.name, fkc.constraint_column_id
             """
             cursor.execute(outgoing_query, (table, schema))
-            outgoing = [
-                {
-                    "constraint": row.constraint_name,
-                    "column": row.column_name,
-                    "references_table": row.referenced_table,
-                    "references_column": row.referenced_column,
-                }
-                for row in cursor.fetchall()
-            ]
+
+            # Group outgoing FKs by constraint (for composite FKs)
+            outgoing_raw = cursor.fetchall()
+            outgoing_map: dict[str, dict[str, Any]] = {}
+            for row in outgoing_raw:
+                if row.constraint_name not in outgoing_map:
+                    outgoing_map[row.constraint_name] = {
+                        "constraint": row.constraint_name,
+                        "columns": [],
+                        "references_table": f"{row.referenced_schema}.{row.referenced_table}",
+                        "references_columns": [],
+                        "on_delete": row.on_delete,
+                        "on_update": row.on_update,
+                        "is_disabled": bool(row.is_disabled),
+                    }
+                outgoing_map[row.constraint_name]["columns"].append(row.column_name)
+                outgoing_map[row.constraint_name]["references_columns"].append(
+                    row.referenced_column
+                )
+
+            outgoing = list(outgoing_map.values())
 
             # Get incoming FKs (other tables reference this one)
             incoming_query = """
@@ -459,22 +562,41 @@ async def GetTableRelationships(table_name: str) -> str:
                     OBJECT_SCHEMA_NAME(fk.parent_object_id) AS referencing_schema,
                     OBJECT_NAME(fk.parent_object_id) AS referencing_table,
                     COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS referencing_column,
-                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS referenced_column,
+                    fk.delete_referential_action_desc AS on_delete,
+                    fk.update_referential_action_desc AS on_update,
+                    fk.is_disabled,
+                    fkc.constraint_column_id
                 FROM sys.foreign_keys fk
                 JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
                 WHERE OBJECT_NAME(fk.referenced_object_id) = ?
                   AND OBJECT_SCHEMA_NAME(fk.referenced_object_id) = ?
+                ORDER BY fk.name, fkc.constraint_column_id
             """
             cursor.execute(incoming_query, (table, schema))
-            incoming = [
-                {
-                    "constraint": row.constraint_name,
-                    "from_table": f"{row.referencing_schema}.{row.referencing_table}",
-                    "from_column": row.referencing_column,
-                    "to_column": row.referenced_column,
-                }
-                for row in cursor.fetchall()
-            ]
+
+            # Group incoming FKs by constraint (for composite FKs)
+            incoming_raw = cursor.fetchall()
+            incoming_map: dict[str, dict[str, Any]] = {}
+            for row in incoming_raw:
+                if row.constraint_name not in incoming_map:
+                    incoming_map[row.constraint_name] = {
+                        "constraint": row.constraint_name,
+                        "from_table": f"{row.referencing_schema}.{row.referencing_table}",
+                        "from_columns": [],
+                        "to_columns": [],
+                        "on_delete": row.on_delete,
+                        "on_update": row.on_update,
+                        "is_disabled": bool(row.is_disabled),
+                    }
+                incoming_map[row.constraint_name]["from_columns"].append(
+                    row.referencing_column
+                )
+                incoming_map[row.constraint_name]["to_columns"].append(
+                    row.referenced_column
+                )
+
+            incoming = list(incoming_map.values())
             return outgoing, incoming
         finally:
             conn.close()
@@ -492,6 +614,422 @@ async def GetTableRelationships(table_name: str) -> str:
     logger.debug(
         f"Found {len(outgoing)} outgoing, {len(incoming)} incoming relationships"
     )
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def ListIndexes(table_name: str) -> str:
+    """List indexes defined on a table with columns and types.
+
+    Args:
+        table_name: Table name (can include schema, e.g., 'dbo.customers')
+
+    Returns:
+        JSON string with index definitions including columns and types
+
+    """
+    logger.debug(f"ListIndexes called for {table_name}")
+
+    # Parse schema.table format
+    if "." in table_name:
+        schema, table = table_name.split(".", 1)
+    else:
+        schema = "dbo"
+        table = table_name
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    i.name AS index_name,
+                    i.type_desc AS index_type,
+                    i.is_unique,
+                    i.is_primary_key,
+                    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+                FROM sys.indexes i
+                JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE i.object_id = OBJECT_ID(?)
+                  AND i.name IS NOT NULL
+                GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
+                ORDER BY i.is_primary_key DESC, i.name
+            """
+            cursor.execute(query, (f"{schema}.{table}",))
+
+            indexes = []
+            for row in cursor.fetchall():
+                indexes.append(
+                    {
+                        "name": row.index_name,
+                        "type": row.index_type,
+                        "is_unique": bool(row.is_unique),
+                        "is_primary_key": bool(row.is_primary_key),
+                        "columns": row.columns,
+                    }
+                )
+            return indexes
+        finally:
+            conn.close()
+
+    indexes = await run_in_thread(_query)
+
+    result = {
+        "table": f"{schema}.{table}",
+        "index_count": len(indexes),
+        "indexes": indexes,
+    }
+
+    logger.debug(f"Found {len(indexes)} indexes for {table_name}")
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def ListConstraints(table_name: str) -> str:
+    """List constraints defined on a table (CHECK, UNIQUE, DEFAULT).
+
+    Args:
+        table_name: Table name (can include schema, e.g., 'dbo.orders')
+
+    Returns:
+        JSON string with constraint definitions
+
+    """
+    logger.debug(f"ListConstraints called for {table_name}")
+
+    # Parse schema.table format
+    if "." in table_name:
+        schema, table = table_name.split(".", 1)
+    else:
+        schema = "dbo"
+        table = table_name
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Query for CHECK and UNIQUE constraints
+            constraints_query = """
+                SELECT
+                    tc.CONSTRAINT_NAME,
+                    tc.CONSTRAINT_TYPE,
+                    COALESCE(ccu.COLUMN_NAME, '') AS COLUMN_NAME,
+                    COALESCE(cc.CHECK_CLAUSE, '') AS CHECK_CLAUSE
+                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                LEFT JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
+                    ON tc.CONSTRAINT_NAME = ccu.CONSTRAINT_NAME
+                    AND tc.TABLE_SCHEMA = ccu.TABLE_SCHEMA
+                    AND tc.TABLE_NAME = ccu.TABLE_NAME
+                LEFT JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+                    ON tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+                WHERE tc.TABLE_SCHEMA = ?
+                  AND tc.TABLE_NAME = ?
+                  AND tc.CONSTRAINT_TYPE IN ('CHECK', 'UNIQUE')
+                ORDER BY tc.CONSTRAINT_TYPE, tc.CONSTRAINT_NAME
+            """
+            cursor.execute(constraints_query, (schema, table))
+
+            constraints = []
+            for row in cursor.fetchall():
+                constraint: dict[str, Any] = {
+                    "name": row.CONSTRAINT_NAME,
+                    "type": row.CONSTRAINT_TYPE,
+                }
+                if row.COLUMN_NAME:
+                    constraint["column"] = row.COLUMN_NAME
+                if row.CHECK_CLAUSE:
+                    constraint["definition"] = row.CHECK_CLAUSE
+
+                constraints.append(constraint)
+
+            # Query for DEFAULT constraints
+            default_query = """
+                SELECT
+                    dc.name AS constraint_name,
+                    c.name AS column_name,
+                    dc.definition AS default_value
+                FROM sys.default_constraints dc
+                JOIN sys.columns c ON dc.parent_object_id = c.object_id
+                    AND dc.parent_column_id = c.column_id
+                WHERE OBJECT_SCHEMA_NAME(dc.parent_object_id) = ?
+                  AND OBJECT_NAME(dc.parent_object_id) = ?
+                ORDER BY c.name
+            """
+            cursor.execute(default_query, (schema, table))
+
+            for row in cursor.fetchall():
+                constraints.append(
+                    {
+                        "name": row.constraint_name,
+                        "type": "DEFAULT",
+                        "column": row.column_name,
+                        "definition": row.default_value,
+                    }
+                )
+
+            return constraints
+        finally:
+            conn.close()
+
+    constraints = await run_in_thread(_query)
+
+    result = {
+        "table": f"{schema}.{table}",
+        "constraint_count": len(constraints),
+        "constraints": constraints,
+    }
+
+    logger.debug(f"Found {len(constraints)} constraints for {table_name}")
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def ListStoredProcedures(schema_filter: str | None = None) -> str:
+    """List stored procedures in the database with parameter information.
+
+    Args:
+        schema_filter: Optional schema to filter (e.g., 'dbo')
+
+    Returns:
+        JSON string with stored procedure names and parameter info
+
+    """
+    logger.debug(f"ListStoredProcedures called with schema_filter={schema_filter}")
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    SCHEMA_NAME(p.schema_id) AS schema_name,
+                    p.name AS procedure_name,
+                    p.create_date,
+                    p.modify_date,
+                    STUFF((
+                        SELECT ', ' + par.name + ' ' + TYPE_NAME(par.user_type_id)
+                        FROM sys.parameters par
+                        WHERE par.object_id = p.object_id
+                        ORDER BY par.parameter_id
+                        FOR XML PATH('')
+                    ), 1, 2, '') AS parameters
+                FROM sys.procedures p
+                WHERE SCHEMA_NAME(p.schema_id) = COALESCE(?, SCHEMA_NAME(p.schema_id))
+                ORDER BY schema_name, procedure_name
+            """
+            if schema_filter:
+                cursor.execute(query, (schema_filter,))
+            else:
+                cursor.execute(query, (None,))
+
+            procedures = []
+            for row in cursor.fetchall():
+                proc: dict[str, Any] = {
+                    "schema": row.schema_name,
+                    "name": row.procedure_name,
+                    "full_name": f"{row.schema_name}.{row.procedure_name}",
+                }
+                if row.parameters:
+                    proc["parameters"] = row.parameters
+                else:
+                    proc["parameters"] = None
+
+                procedures.append(proc)
+
+            return procedures
+        finally:
+            conn.close()
+
+    procedures = await run_in_thread(_query)
+
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "procedure_count": len(procedures),
+        "procedures": procedures[:500],
+    }
+
+    if schema_filter:
+        result["schema_filter"] = schema_filter
+
+    if len(procedures) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(procedures)} procedures. "
+            "Use schema_filter to narrow results."
+        )
+
+    logger.debug(f"Found {len(procedures)} stored procedures")
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def ListFunctions(schema_filter: str | None = None) -> str:
+    """List user-defined functions in the database with parameter information.
+
+    Args:
+        schema_filter: Optional schema to filter (e.g., 'dbo')
+
+    Returns:
+        JSON string with function names, types, and parameter info
+
+    """
+    logger.debug(f"ListFunctions called with schema_filter={schema_filter}")
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    SCHEMA_NAME(o.schema_id) AS schema_name,
+                    o.name AS function_name,
+                    o.type_desc AS function_type,
+                    STUFF((
+                        SELECT ', ' + par.name + ' ' + TYPE_NAME(par.user_type_id)
+                        FROM sys.parameters par
+                        WHERE par.object_id = o.object_id
+                        ORDER BY par.parameter_id
+                        FOR XML PATH('')
+                    ), 1, 2, '') AS parameters
+                FROM sys.objects o
+                WHERE o.type IN ('FN', 'IF', 'TF')
+                  AND SCHEMA_NAME(o.schema_id) = COALESCE(?, SCHEMA_NAME(o.schema_id))
+                ORDER BY schema_name, function_name
+            """
+            if schema_filter:
+                cursor.execute(query, (schema_filter,))
+            else:
+                cursor.execute(query, (None,))
+
+            functions = []
+            for row in cursor.fetchall():
+                func: dict[str, Any] = {
+                    "schema": row.schema_name,
+                    "name": row.function_name,
+                    "full_name": f"{row.schema_name}.{row.function_name}",
+                    "type": row.function_type,
+                }
+                if row.parameters:
+                    func["parameters"] = row.parameters
+                else:
+                    func["parameters"] = None
+
+                functions.append(func)
+
+            return functions
+        finally:
+            conn.close()
+
+    functions = await run_in_thread(_query)
+
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "function_count": len(functions),
+        "functions": functions[:500],
+    }
+
+    if schema_filter:
+        result["schema_filter"] = schema_filter
+
+    if len(functions) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(functions)} functions. "
+            "Use schema_filter to narrow results."
+        )
+
+    logger.debug(f"Found {len(functions)} user-defined functions")
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def ListTriggers(schema_filter: str | None = None) -> str:
+    """List triggers in the database with event and type information.
+
+    Args:
+        schema_filter: Optional schema name to filter triggers (e.g., 'dbo').
+
+    Returns:
+        JSON string containing trigger metadata including name, schema, table,
+        type (AFTER/INSTEAD OF), events (INSERT, UPDATE, DELETE), and enabled status.
+
+    """
+    logger.debug(f"ListTriggers called with schema_filter={schema_filter}")
+
+    def _query() -> list[dict[str, Any]]:
+        """Execute query with per-request connection (thread-safe)."""
+        conn = create_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT
+                    SCHEMA_NAME(o.schema_id) AS schema_name,
+                    tr.name AS trigger_name,
+                    OBJECT_NAME(tr.parent_id) AS table_name,
+                    CASE tr.is_instead_of_trigger
+                        WHEN 1 THEN 'INSTEAD OF'
+                        ELSE 'AFTER'
+                    END AS trigger_type,
+                    tr.is_disabled,
+                    STUFF((
+                        SELECT ', ' + te.type_desc
+                        FROM sys.trigger_events te
+                        WHERE te.object_id = tr.object_id
+                        ORDER BY te.type_desc
+                        FOR XML PATH('')
+                    ), 1, 2, '') AS events
+                FROM sys.triggers tr
+                INNER JOIN sys.objects o ON tr.parent_id = o.object_id
+                WHERE SCHEMA_NAME(o.schema_id) = COALESCE(?, SCHEMA_NAME(o.schema_id))
+                ORDER BY schema_name, trigger_name
+            """
+            if schema_filter:
+                cursor.execute(query, (schema_filter,))
+            else:
+                cursor.execute(query, (None,))
+
+            triggers = []
+            for row in cursor.fetchall():
+                trigger: dict[str, Any] = {
+                    "schema": row.schema_name,
+                    "name": row.trigger_name,
+                    "full_name": f"{row.schema_name}.{row.trigger_name}",
+                    "table": f"{row.schema_name}.{row.table_name}",
+                    "type": row.trigger_type,
+                    "events": row.events if row.events else None,
+                    "is_disabled": bool(row.is_disabled),
+                }
+                triggers.append(trigger)
+
+            return triggers
+        finally:
+            conn.close()
+
+    triggers = await run_in_thread(_query)
+
+    result: dict[str, Any] = {
+        "database": MSSQL_DATABASE,
+        "server": MSSQL_SERVER,
+        "trigger_count": len(triggers),
+        "triggers": triggers[:500],
+    }
+
+    if schema_filter:
+        result["schema_filter"] = schema_filter
+
+    if len(triggers) > 500:
+        result["note"] = (
+            f"Showing first 500 of {len(triggers)} triggers. "
+            "Use schema_filter to narrow results."
+        )
+
+    logger.debug(f"Found {len(triggers)} triggers")
     return json.dumps(result, indent=2)
 
 
@@ -708,7 +1246,30 @@ async def database_info_resource() -> str:
 
 
 def main() -> None:
-    """Run the MCP server."""
+    """Run the MCP server with configuration and health check."""
+    # Avoid circular import by importing here
+    from mssql_mcp_server.config import load_config
+    from mssql_mcp_server.health import run_health_check
+
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Load configuration (handles CLI args, config file, env vars)
+    config = load_config()
+
+    # Set global config for create_connection()
+    set_config(config)
+
+    # Run health check
+    logger.info("Running startup health check...")
+    if not run_health_check(config, verbose=True):
+        logger.error("Health check failed. Exiting.")
+        raise SystemExit(1)
+
+    logger.info("Starting MSSQL MCP Server...")
     mcp.run()
 
 
