@@ -8,14 +8,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Nothing yet
+
+### Changed
+- Nothing yet
+
+### Fixed
+- Nothing yet
+
+## [0.4.0] - 2026-01-03
+
+**Phase 3: Production Readiness COMPLETE** - All 4 sub-phases finished, project is production-ready
+
+### Added
+- **Phase 3.4 Documentation COMPLETE** - Comprehensive documentation (4,893 lines across 5 guides)
+  - `docs/API.md` (1,029 lines) - Complete API reference for all 11 tools and 5 MCP resources
+  - `docs/CONFIGURATION.md` (778 lines) - Configuration guide (CLI, TOML, env vars) with deployment examples
+  - `docs/TROUBLESHOOTING.md` (1,188 lines) - 30+ common issues with step-by-step solutions
+  - `docs/EXAMPLES.md` (952 lines) - 40+ use cases with code examples (schema discovery, data exploration, performance analysis)
+  - `docs/DEVELOPMENT.md` (946 lines) - Developer guide (architecture, testing patterns, contribution workflow)
+  - Updated README.md with enhanced features list, tools table (11 tools), and documentation links
+- **Phase 3.3 Error Handling COMPLETE** - Robust error handling with retry logic
+  - `src/mssql_mcp_server/errors.py` - 5 typed exception classes (55 lines, 98.18% coverage)
+    - `ConnectionError` - Database connection failures
+    - `QueryError` - SQL execution errors
+    - `SecurityError` - Blocked dangerous queries
+    - `ValidationError` - Invalid input parameters
+    - `TimeoutError` - Query timeout exceeded
+  - `format_error_response()` - Consistent JSON error format with error codes and details
+  - `is_transient_error()` - Detects retryable errors (connection failures, timeouts, deadlocks)
+  - `retry_with_backoff()` - Exponential backoff retry logic (configurable max_retries, retry_delay)
+  - `@handle_tool_errors` decorator applied to all 11 tools for consistent error handling
+  - Extended config.py with error handling parameters (query_timeout, max_retries, retry_delay)
+  - Updated config.example.toml with error handling configuration examples
+  - `tests/test_errors.py` - 20 comprehensive error handling tests
+  - **Test Results**: 193 tests passing (up from 173), 83.36% coverage (up from 79.83%)
 - **Phase 3.2 Configuration Improvements COMPLETE** - Professional configuration management system
-  - CLI argument support (`--server`, `--database`, `--driver`, `--connection-timeout`)
+  - CLI argument support (`--server`, `--database`, `--driver`, `--connection-timeout`, `--query-timeout`, `--max-retries`, `--retry-delay`)
   - TOML configuration file support via `--config` flag with example config file (`config.example.toml`)
   - Configuration priority system: CLI args > Config file > Environment variables > Defaults
   - Startup health check with database connection validation and helpful error messages
   - `--validate-only` flag for configuration testing without starting server
   - New modules:
-    - `src/mssql_mcp_server/config.py` - ServerConfig class, TOML loading, CLI parsing, validation (95 lines, 91.58% coverage)
+    - `src/mssql_mcp_server/config.py` - ServerConfig class, TOML loading, CLI parsing, validation (95 lines, 90.98% coverage)
     - `src/mssql_mcp_server/health.py` - Database health checks with specific error detection (48 lines, 100% coverage)
   - Comprehensive test coverage:
     - `tests/test_config.py` - 31 tests for configuration management (validation, env vars, TOML files, CLI args, priority)
@@ -30,7 +65,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Async behavior tests in `tests/test_async.py` (4 test classes, 11 tests for concurrency and thread safety)
   - Enhanced security filtering edge case tests (11 additional tests)
   - **Test Results**: 130 tests passing (up from 88), 77.07% coverage (up from 13.80%)
-- **Phase 2: Feature Completeness** - Completed comprehensive SQL Server schema discovery
+
+### Changed
+- Server now loads configuration on startup via `load_config()` with CLI argument support
+- `main()` function performs health check before starting server
+- `create_connection()` uses global config when available, falling back to legacy environment variables
+- All 11 tools wrapped with `@handle_tool_errors` decorator for consistent error handling
+- CLI args now use `is not None` checks to allow empty string values (important for validation testing)
+- **Dependencies**: Added `tomli>=2.0.0` for TOML config file support (Python <3.11; stdlib tomllib used for 3.11+)
+- Coverage threshold increased to 15% (from 13%) due to comprehensive test suite
+- README.md significantly enhanced with features list, tools table, documentation section
+
+### Fixed
+- PEP 257 docstring compliance issues (imperative mood) in server.py and test_errors.py
+- Type annotation issues in handle_tool_errors decorator (explicit str() cast)
+- Unpacking error in lifespan context manager (now unpacks all 7 config values)
+
+## [0.3.0] - 2026-01-02
+
+**Phase 2: Feature Completeness** - Completed comprehensive SQL Server schema discovery
+
+### Added
 - `ListIndexes` tool - Get indexes defined on a table with columns, types, and properties
 - `ListConstraints` tool - Get CHECK, UNIQUE, and DEFAULT constraints with definitions
 - `ListStoredProcedures` tool - List stored procedures with parameter information and schema filtering
@@ -56,11 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 2 implementation plan document (docs/PHASE_2_PLAN.md)
 
 ### Changed
-- Server now loads configuration on startup via `load_config()` with CLI argument support
-- `main()` function performs health check before starting server
-- `create_connection()` uses global config when available, falling back to legacy environment variables
-- CLI args now use `is not None` checks to allow empty string values (important for validation testing)
-- **Dependencies**: Added `tomli>=2.0.0` for TOML config file support (Python <3.11; stdlib tomllib used for 3.11+)
 - Coverage threshold adjusted to 13% (from 15%) to accommodate Phase 2 feature growth
 - CI workflow updated to use 13% coverage threshold
 - `DescribeTable` tool now queries INFORMATION_SCHEMA.KEY_COLUMN_USAGE for primary keys
