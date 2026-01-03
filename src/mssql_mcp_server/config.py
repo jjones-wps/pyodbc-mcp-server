@@ -25,6 +25,9 @@ class ServerConfig:
         database: str = "master",
         driver: str = "ODBC Driver 17 for SQL Server",
         connection_timeout: int = 30,
+        query_timeout: int = 30,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
         config_file: Path | None = None,
     ):
         """Initialize server configuration.
@@ -34,6 +37,9 @@ class ServerConfig:
             database: Database name
             driver: ODBC driver name
             connection_timeout: Connection timeout in seconds
+            query_timeout: Query execution timeout in seconds
+            max_retries: Maximum number of retry attempts for transient errors
+            retry_delay: Base retry delay in seconds (exponential backoff)
             config_file: Path to TOML config file
 
         """
@@ -41,6 +47,9 @@ class ServerConfig:
         self.database = database
         self.driver = driver
         self.connection_timeout = connection_timeout
+        self.query_timeout = query_timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
         self.config_file = config_file
 
     def validate(self) -> list[str]:
@@ -64,7 +73,7 @@ class ServerConfig:
         if not self.driver or not self.driver.strip():
             errors.append("ODBC driver name cannot be empty")
 
-        # Validate timeout
+        # Validate connection timeout
         if self.connection_timeout <= 0:
             errors.append(
                 f"Connection timeout must be positive (got {self.connection_timeout})"
@@ -73,6 +82,26 @@ class ServerConfig:
             errors.append(
                 f"Connection timeout too large (got {self.connection_timeout}, max 300)"
             )
+
+        # Validate query timeout
+        if self.query_timeout <= 0:
+            errors.append(f"Query timeout must be positive (got {self.query_timeout})")
+        elif self.query_timeout > 3600:
+            errors.append(
+                f"Query timeout too large (got {self.query_timeout}, max 3600)"
+            )
+
+        # Validate max_retries
+        if self.max_retries < 0:
+            errors.append(f"Max retries must be non-negative (got {self.max_retries})")
+        elif self.max_retries > 10:
+            errors.append(f"Max retries too large (got {self.max_retries}, max 10)")
+
+        # Validate retry_delay
+        if self.retry_delay < 0:
+            errors.append(f"Retry delay must be non-negative (got {self.retry_delay})")
+        elif self.retry_delay > 60:
+            errors.append(f"Retry delay too large (got {self.retry_delay}, max 60)")
 
         return errors
 
@@ -88,6 +117,9 @@ class ServerConfig:
             "database": self.database,
             "driver": self.driver,
             "connection_timeout": self.connection_timeout,
+            "query_timeout": self.query_timeout,
+            "max_retries": self.max_retries,
+            "retry_delay": self.retry_delay,
         }
 
     def __repr__(self) -> str:
@@ -101,7 +133,10 @@ class ServerConfig:
             f"ServerConfig(server={self.server!r}, "
             f"database={self.database!r}, "
             f"driver={self.driver!r}, "
-            f"connection_timeout={self.connection_timeout})"
+            f"connection_timeout={self.connection_timeout}, "
+            f"query_timeout={self.query_timeout}, "
+            f"max_retries={self.max_retries}, "
+            f"retry_delay={self.retry_delay})"
         )
 
 
@@ -117,6 +152,9 @@ def load_from_env() -> ServerConfig:
         database=os.environ.get("MSSQL_DATABASE", "master"),
         driver=os.environ.get("ODBC_DRIVER", "ODBC Driver 17 for SQL Server"),
         connection_timeout=int(os.environ.get("MSSQL_CONNECTION_TIMEOUT", "30")),
+        query_timeout=int(os.environ.get("MSSQL_QUERY_TIMEOUT", "30")),
+        max_retries=int(os.environ.get("MSSQL_MAX_RETRIES", "3")),
+        retry_delay=float(os.environ.get("MSSQL_RETRY_DELAY", "1.0")),
     )
 
 
@@ -162,6 +200,9 @@ def load_from_toml(config_path: Path) -> ServerConfig:
         database=mssql_config.get("database", "master"),
         driver=mssql_config.get("driver", "ODBC Driver 17 for SQL Server"),
         connection_timeout=mssql_config.get("connection_timeout", 30),
+        query_timeout=mssql_config.get("query_timeout", 30),
+        max_retries=mssql_config.get("max_retries", 3),
+        retry_delay=mssql_config.get("retry_delay", 1.0),
         config_file=config_path,
     )
 
@@ -216,6 +257,21 @@ Example:
         help="Connection timeout in seconds",
     )
     parser.add_argument(
+        "--query-timeout",
+        type=int,
+        help="Query execution timeout in seconds",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        help="Maximum number of retry attempts for transient errors",
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        help="Base retry delay in seconds (exponential backoff)",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         help="Path to TOML config file",
@@ -262,6 +318,9 @@ def load_config(args: list[str] | None = None) -> ServerConfig:
             config.database = file_config.database
             config.driver = file_config.driver
             config.connection_timeout = file_config.connection_timeout
+            config.query_timeout = file_config.query_timeout
+            config.max_retries = file_config.max_retries
+            config.retry_delay = file_config.retry_delay
             config.config_file = file_config.config_file
             logger.info(f"Loaded configuration from {cli_args.config}")
         except Exception as e:
@@ -277,6 +336,12 @@ def load_config(args: list[str] | None = None) -> ServerConfig:
         config.driver = cli_args.driver
     if cli_args.connection_timeout is not None:
         config.connection_timeout = cli_args.connection_timeout
+    if cli_args.query_timeout is not None:
+        config.query_timeout = cli_args.query_timeout
+    if cli_args.max_retries is not None:
+        config.max_retries = cli_args.max_retries
+    if cli_args.retry_delay is not None:
+        config.retry_delay = cli_args.retry_delay
 
     # Validate configuration
     errors = config.validate()

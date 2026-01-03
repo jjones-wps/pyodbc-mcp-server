@@ -44,6 +44,15 @@ import anyio
 import pyodbc
 from fastmcp import FastMCP
 
+from mssql_mcp_server.errors import (
+    ConnectionError as MSSQLConnectionError,
+)
+from mssql_mcp_server.errors import (
+    SecurityError,
+    ValidationError,
+    format_error_response,
+)
+
 if TYPE_CHECKING:
     from mssql_mcp_server.config import ServerConfig
 
@@ -72,11 +81,11 @@ def set_config(config: "ServerConfig") -> None:
     _config = config
 
 
-def get_config() -> tuple[str, str, str, int]:
+def get_config() -> tuple[str, str, str, int, int, int, float]:
     """Get current configuration values.
 
     Returns:
-        Tuple of (server, database, driver, timeout)
+        Tuple of (server, database, driver, connection_timeout, query_timeout, max_retries, retry_delay)
 
     """
     if _config:
@@ -85,9 +94,12 @@ def get_config() -> tuple[str, str, str, int]:
             _config.database,
             _config.driver,
             _config.connection_timeout,
+            _config.query_timeout,
+            _config.max_retries,
+            _config.retry_delay,
         )
     # Fall back to environment variables
-    return (MSSQL_SERVER, MSSQL_DATABASE, ODBC_DRIVER, CONNECTION_TIMEOUT)
+    return (MSSQL_SERVER, MSSQL_DATABASE, ODBC_DRIVER, CONNECTION_TIMEOUT, 30, 3, 1.0)
 
 
 def create_connection() -> pyodbc.Connection:
@@ -96,8 +108,15 @@ def create_connection() -> pyodbc.Connection:
     Creates a fresh connection using Windows Authentication.
     Windows ODBC Driver handles connection pooling at the driver level,
     so we don't need application-level pooling.
+
+    Returns:
+        Database connection
+
+    Raises:
+        MSSQLConnectionError: If connection fails
+
     """
-    server, database, driver, timeout = get_config()
+    server, database, driver, connection_timeout, query_timeout, _, _ = get_config()
     conn_str = (
         f"DRIVER={{{driver}}};"
         f"SERVER={server};"
@@ -105,7 +124,23 @@ def create_connection() -> pyodbc.Connection:
         f"Trusted_Connection=yes;"
         f"TrustServerCertificate=yes;"
     )
-    return pyodbc.connect(conn_str, timeout=timeout)
+
+    try:
+        conn = pyodbc.connect(conn_str, timeout=connection_timeout)
+        # Set query timeout on the connection
+        conn.timeout = query_timeout
+        return conn
+    except pyodbc.Error as e:
+        error_msg = str(e)
+        logger.error(f"Database connection failed: {error_msg}")
+        raise MSSQLConnectionError(
+            message=f"Failed to connect to SQL Server: {error_msg}",
+            details={
+                "server": server,
+                "database": database,
+                "driver": driver,
+            },
+        ) from e
 
 
 @asynccontextmanager
@@ -115,7 +150,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     Logs server initialization and cleanup. Connection pooling is handled
     transparently by the Windows ODBC Driver at the driver level.
     """
-    server_name, database, _, _ = get_config()
+    server_name, database, _, _, _, _, _ = get_config()
     logger.info(f"Starting MSSQL MCP Server: server={server_name}, database={database}")
     logger.info(
         "Using per-request connections (ODBC driver handles pooling at driver level)"
@@ -135,12 +170,81 @@ async def run_in_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
     return await anyio.to_thread.run_sync(lambda: func(*args, **kwargs))
 
 
+def retry_with_backoff(func: Any, *args: Any, **kwargs: Any) -> Any:
+    """Retry a function with exponential backoff for transient errors.
+
+    Args:
+        func: The function to retry (must be a sync function)
+        *args: Positional arguments for the function
+        **kwargs: Keyword arguments for the function
+
+    Returns:
+        The function result
+
+    Raises:
+        The last exception if all retries are exhausted
+
+    """
+    import time
+
+    from mssql_mcp_server.errors import is_transient_error
+
+    _, _, _, _, _, max_retries, retry_delay = get_config()
+
+    last_exception = None
+    for attempt in range(max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            last_exception = e
+            if not is_transient_error(e) or attempt >= max_retries:
+                raise
+            # Calculate exponential backoff delay
+            delay = retry_delay * (2**attempt)
+            logger.warning(
+                f"Transient error on attempt {attempt + 1}/{max_retries + 1}: {e}. "
+                f"Retrying in {delay:.1f}s..."
+            )
+            time.sleep(delay)
+
+    # This should never be reached, but for type safety
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("Retry loop exited unexpectedly")
+
+
+def handle_tool_errors(func: Any) -> Any:
+    """Handle errors in MCP tools and return consistent error responses.
+
+    Args:
+        func: The async function to wrap
+
+    Returns:
+        Wrapped function that catches errors and returns formatted JSON
+
+    """
+    import functools
+
+    @functools.wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> str:
+        """Wrap tool call with error handling."""
+        try:
+            result = await func(*args, **kwargs)
+            return str(result)  # Ensure string return type
+        except Exception as e:
+            logger.error(f"Error in {func.__name__}: {e}")
+            return format_error_response(e)
+
+    return wrapper
+
+
 # =============================================================================
 # MCP Tools
 # =============================================================================
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ListTables(schema_filter: str | None = None) -> str:
     """List all tables in the SQL Server database.
 
@@ -177,7 +281,8 @@ async def ListTables(schema_filter: str | None = None) -> str:
         finally:
             conn.close()
 
-    tables = await run_in_thread(_query)
+    # Run query with retry logic for transient errors
+    tables = await run_in_thread(retry_with_backoff, _query)
 
     result: dict[str, Any] = {
         "database": MSSQL_DATABASE,
@@ -197,6 +302,7 @@ async def ListTables(schema_filter: str | None = None) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def DescribeTable(table_name: str) -> str:
     """Return the schema/structure of a specific table.
 
@@ -205,6 +311,9 @@ async def DescribeTable(table_name: str) -> str:
 
     Returns:
         JSON string with column definitions
+
+    Raises:
+        ValidationError: If table_name is empty
 
     """
     logger.debug(f"DescribeTable called for {table_name}")
@@ -319,6 +428,7 @@ async def DescribeTable(table_name: str) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ReadData(query: str, max_rows: int = 100) -> str:
     """Execute a SELECT query and return results. Only SELECT statements allowed.
 
@@ -329,18 +439,29 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
     Returns:
         JSON string with query results
 
+    Raises:
+        ValidationError: If max_rows is invalid
+        SecurityError: If query is not a SELECT or contains dangerous keywords
+
     """
     logger.debug(f"ReadData called with max_rows={max_rows}")
+
+    # Validate max_rows parameter
+    if max_rows <= 0:
+        raise ValidationError(
+            message="max_rows must be positive",
+            parameter="max_rows",
+            value=str(max_rows),
+        )
 
     # Security: Only allow SELECT statements
     query_upper = query.strip().upper()
     if not query_upper.startswith("SELECT"):
         logger.warning("Blocked non-SELECT query attempt")
-        return json.dumps(
-            {
-                "error": "Security Error: Only SELECT queries are allowed. "
-                "This server is read-only."
-            }
+        raise SecurityError(
+            message="Only SELECT queries are allowed. This server is read-only.",
+            query=query,
+            blocked_keyword="non-SELECT statement",
         )
 
     # Block dangerous keywords that could appear in subqueries or CTEs
@@ -366,11 +487,10 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
         # Check for keyword as whole word (not part of column name)
         if f" {keyword} " in f" {query_upper} " or f" {keyword}(" in f" {query_upper} ":
             logger.warning(f"Blocked query with forbidden keyword: {keyword}")
-            return json.dumps(
-                {
-                    "error": f"Security Error: Query contains forbidden keyword "
-                    f"'{keyword}'. This server is read-only."
-                }
+            raise SecurityError(
+                message=f"Query contains forbidden keyword '{keyword}'. This server is read-only.",
+                query=query,
+                blocked_keyword=keyword,
             )
 
     # Limit rows
@@ -429,6 +549,7 @@ async def ReadData(query: str, max_rows: int = 100) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ListViews(schema_filter: str | None = None) -> str:
     """List all views in the SQL Server database.
 
@@ -484,6 +605,7 @@ async def ListViews(schema_filter: str | None = None) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def GetTableRelationships(table_name: str) -> str:
     """Return foreign key relationships for a specific table.
 
@@ -618,6 +740,7 @@ async def GetTableRelationships(table_name: str) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ListIndexes(table_name: str) -> str:
     """List indexes defined on a table with columns and types.
 
@@ -687,6 +810,7 @@ async def ListIndexes(table_name: str) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ListConstraints(table_name: str) -> str:
     """List constraints defined on a table (CHECK, UNIQUE, DEFAULT).
 
@@ -788,6 +912,7 @@ async def ListConstraints(table_name: str) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ListStoredProcedures(schema_filter: str | None = None) -> str:
     """List stored procedures in the database with parameter information.
 
@@ -868,6 +993,7 @@ async def ListStoredProcedures(schema_filter: str | None = None) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ListFunctions(schema_filter: str | None = None) -> str:
     """List user-defined functions in the database with parameter information.
 
@@ -949,6 +1075,7 @@ async def ListFunctions(schema_filter: str | None = None) -> str:
 
 
 @mcp.tool()
+@handle_tool_errors
 async def ListTriggers(schema_filter: str | None = None) -> str:
     """List triggers in the database with event and type information.
 

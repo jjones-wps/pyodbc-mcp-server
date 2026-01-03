@@ -1,6 +1,7 @@
 """Async behavior tests for MSSQL MCP Server."""
 
 import asyncio
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -156,8 +157,12 @@ class TestConnectionHandling:
         with patch(
             "mssql_mcp_server.server.create_connection", return_value=mock_connection
         ):
-            with pytest.raises(Exception, match="Database error"):
-                await server.ListTables.fn()
+            # With error handling, exceptions are caught and returned as formatted JSON
+            result = await server.ListTables.fn()
+            # Verify error was returned
+            data = json.loads(result)
+            assert data["error"] == "INTERNAL_ERROR"
+            assert "Database error" in data["message"]
 
         # Connection should still be closed
         mock_connection.close.assert_called()

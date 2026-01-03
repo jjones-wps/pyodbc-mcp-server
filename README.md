@@ -12,19 +12,29 @@ Built for environments where:
 
 - **Windows Authentication** - Uses `Trusted_Connection` via pyodbc, no credentials to manage
 - **Read-only by design** - Only SELECT queries allowed, dangerous keywords blocked
-- **Row limiting** - Prevents accidental large result sets (configurable, max 1000)
-- **Schema exploration** - List tables, views, describe columns, find relationships
-- **MCP compatible** - Works with Claude Code, Claude Desktop, and any MCP client
+- **Comprehensive error handling** - Typed exceptions with retry logic for transient failures
+- **Row limiting** - Prevents accidental large result sets (configurable, max 10,000)
+- **Schema exploration** - 10 tools for tables, views, indexes, constraints, relationships, and more
+- **MCP resources** - 5 URI-based endpoints for quick data access
+- **Configurable** - CLI arguments, TOML config files, or environment variables
+- **Production-ready** - Query timeouts, connection retries, comprehensive logging
 
 ## Available Tools
 
 | Tool | Description |
 |------|-------------|
 | `ListTables` | List all tables in the database, optionally filtered by schema |
+| `DescribeTable` | Get detailed column definitions, primary keys, and foreign keys |
+| `ReadData` | Execute SELECT queries with security filtering and row limits |
+| `GetTableRelationships` | Find foreign key relationships with referential actions |
 | `ListViews` | List all views in the database, optionally filtered by schema |
-| `DescribeTable` | Get column definitions for a specific table |
-| `GetTableRelationships` | Find foreign key relationships for a table |
-| `ReadData` | Execute a SELECT query (with security filtering) |
+| `ListIndexes` | List all indexes for a specific table with metadata |
+| `ListConstraints` | List all constraints (PK, FK, unique, check, default) |
+| `ListStoredProcedures` | List all stored procedures, optionally filtered by schema |
+| `ListFunctions` | List all user-defined functions, optionally filtered by schema |
+| `ListTriggers` | List all triggers with table association and status |
+
+**See [API Reference](docs/API.md) for complete documentation.**
 
 ## Installation
 
@@ -55,6 +65,47 @@ Download and install [Microsoft ODBC Driver 17 for SQL Server](https://docs.micr
 
 ## Configuration
 
+### Quick Configuration
+
+The server supports three configuration methods (in priority order):
+
+1. **CLI Arguments** (highest priority)
+2. **TOML Configuration File**
+3. **Environment Variables** (lowest priority)
+
+**Minimal setup with defaults:**
+```bash
+mssql-mcp-server
+```
+
+**Using TOML config file:**
+```bash
+# Create config from example
+cp config.example.toml config.toml
+
+# Edit config.toml, then run
+mssql-mcp-server --config config.toml
+```
+
+**Override specific settings:**
+```bash
+mssql-mcp-server --config config.toml --database AdventureWorks --query-timeout 120
+```
+
+**See [Configuration Guide](docs/CONFIGURATION.md) for complete documentation.**
+
+### Configuration Parameters
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| `server` | `localhost` | - | SQL Server hostname or IP |
+| `database` | `master` | - | Target database name |
+| `driver` | `ODBC Driver 17 for SQL Server` | - | ODBC driver name |
+| `connection_timeout` | `30` | 1-300 | Connection timeout (seconds) |
+| `query_timeout` | `30` | 1-3600 | Query execution timeout (seconds) |
+| `max_retries` | `3` | 0-10 | Max retry attempts for transient errors |
+| `retry_delay` | `1.0` | 0-60 | Base retry delay (seconds, exponential backoff) |
+
 ### Environment Variables
 
 | Variable | Default | Description |
@@ -62,6 +113,10 @@ Download and install [Microsoft ODBC Driver 17 for SQL Server](https://docs.micr
 | `MSSQL_SERVER` | `localhost` | SQL Server hostname or IP |
 | `MSSQL_DATABASE` | `master` | Target database name |
 | `ODBC_DRIVER` | `ODBC Driver 17 for SQL Server` | ODBC driver name |
+| `MSSQL_CONNECTION_TIMEOUT` | `30` | Connection timeout (seconds) |
+| `MSSQL_QUERY_TIMEOUT` | `30` | Query timeout (seconds) |
+| `MSSQL_MAX_RETRIES` | `3` | Max retry attempts |
+| `MSSQL_RETRY_DELAY` | `1.0` | Base retry delay (seconds) |
 
 ### Claude Code Configuration
 
@@ -189,57 +244,93 @@ This server is designed with security as a primary concern:
 ### Row Limiting
 
 - Default limit: 100 rows per query
-- Maximum limit: 1000 rows per query
+- Maximum limit: 10,000 rows per query
 - Prevents accidental retrieval of large datasets
+
+### Error Handling & Retry Logic
+
+- **Typed Exceptions**: ConnectionError, QueryError, SecurityError, ValidationError, TimeoutError
+- **Automatic Retries**: Transient errors (connection failures, timeouts, deadlocks) are retried with exponential backoff
+- **Configurable Timeouts**: Separate timeouts for connection and query execution
+- **Consistent Error Format**: All errors returned as JSON with error code, message, and details
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+| Document | Description |
+|----------|-------------|
+| [API Reference](docs/API.md) | Complete documentation for all 11 tools and 5 resources |
+| [Configuration Guide](docs/CONFIGURATION.md) | CLI arguments, TOML files, environment variables |
+| [Troubleshooting Guide](docs/TROUBLESHOOTING.md) | Common issues and solutions |
+| [Examples](docs/EXAMPLES.md) | Example queries and use cases |
+| [Development Guide](docs/DEVELOPMENT.md) | Contributing, testing, and release process |
 
 ## Development
 
-### Running Tests
+### Quick Start
 
 ```bash
+# Clone repository
+git clone https://github.com/jjones-wps/pyodbc-mcp-server.git
+cd pyodbc-mcp-server
+
+# Install with development dependencies
 pip install -e ".[dev]"
+
+# Run tests
 pytest
+
+# Check coverage
+pytest --cov=src/mssql_mcp_server --cov-report=html
+
+# Format code
+black src tests && isort src tests
+
+# Type check
+mypy src
+
+# Lint
+ruff check src tests
 ```
 
 ### Running Locally
 
 ```bash
-# Set environment variables
+# Using environment variables
 export MSSQL_SERVER=your-server
 export MSSQL_DATABASE=your-database
-
-# Run the server
 python -m mssql_mcp_server
+
+# Using config file
+cp config.example.toml config.toml
+# Edit config.toml
+mssql-mcp-server --config config.toml
+
+# Validate configuration
+mssql-mcp-server --config config.toml --validate-only
 ```
 
-## Troubleshooting
-
-### "ODBC Driver not found"
-
-Install the Microsoft ODBC Driver for SQL Server:
-- [Download ODBC Driver 17](https://docs.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server)
-
-### "Login failed" or "Cannot connect"
-
-1. Verify your Windows account has access to the SQL Server
-2. Test connection with `sqlcmd -S your-server -d your-database -E`
-3. Check firewall allows connection on port 1433
-
-### "Tools not appearing in Claude Code"
-
-1. Ensure `type: "stdio"` is in your config
-2. Use the `cmd /c` wrapper on Windows
-3. Restart Claude Code after config changes
-4. Check Claude Code logs for MCP errors
+**See [Development Guide](docs/DEVELOPMENT.md) for architecture, testing patterns, and contribution workflow.**
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome! Please see the [Development Guide](docs/DEVELOPMENT.md) for:
 
+- Development setup
+- Architecture overview
+- Testing guide
+- Code style requirements
+- Adding new tools
+- Release process
+
+**Quick contribution checklist:**
 1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Make changes and add tests
+4. Ensure tests pass and coverage doesn't decrease
+5. Format code (`black src tests && isort src tests`)
+6. Submit a pull request
 
 ## License
 

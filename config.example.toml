@@ -17,6 +17,15 @@ driver = "ODBC Driver 17 for SQL Server"
 # Connection timeout in seconds (1-300)
 connection_timeout = 30
 
+# Query execution timeout in seconds (1-3600)
+query_timeout = 30
+
+# Maximum retry attempts for transient errors (0-10)
+max_retries = 3
+
+# Base retry delay in seconds with exponential backoff (0-60)
+retry_delay = 1.0
+
 # Usage Examples:
 #
 # 1. Run with config file:
