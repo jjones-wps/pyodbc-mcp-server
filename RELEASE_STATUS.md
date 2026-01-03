@@ -1,7 +1,7 @@
 # v0.4.0 Release Status
 
 **Date**: 2026-01-03
-**Status**: GitHub Release ✅ Complete | PyPI Publishing ⏳ Pending Configuration
+**Status**: ✅ **COMPLETE** - GitHub Release, Test PyPI, and Production PyPI all published successfully!
 
 ---
 
@@ -34,12 +34,12 @@
 - Package built successfully: `dist/pyodbc_mcp_server-0.4.0.*`
 - Ready for manual upload if needed
 
-### 6. Workflow Execution Verified
-- **Latest Workflow Run**: https://github.com/jjones-wps/pyodbc-mcp-server/actions/runs/20670452016
-- **Build Job**: ✅ Succeeded (9s)
-- **Test PyPI Job**: ✅ **Succeeded (19s)** - Package published!
+### 6. Workflow Execution - Final Success
+- **Latest Workflow Run**: https://github.com/jjones-wps/pyodbc-mcp-server/actions/runs/20670562025
+- **Build Job**: ✅ Succeeded (12s)
 - **GitHub Release Job**: ✅ Succeeded (6s)
-- **Production PyPI Job**: ❌ Failed (trusted publishing not configured)
+- **Test PyPI Job**: ✅ Succeeded (14s) - Package published!
+- **Production PyPI Job**: ✅ **Succeeded (17s)** - Package published to production!
 
 ### 7. Exact Trusted Publishing Configuration Identified
 
@@ -54,16 +54,18 @@ environment: test-pypi (for Test PyPI) / pypi (for Production PyPI)
 
 ---
 
-## ✅ Test PyPI Publishing COMPLETE | ⏳ Production PyPI Pending
+## ✅ PyPI Publishing COMPLETE
 
 **Test PyPI**: ✅ **Successfully Published!**
 - **Package URL**: https://test.pypi.org/project/pyodbc-mcp-server/
 - **Version**: 0.4.0
 - **Published**: 2026-01-03 via GitHub Actions workflow
 
-**Production PyPI**: ⏳ Awaiting trusted publisher configuration
-- Workflow tested and ready
-- Same configuration process as Test PyPI
+**Production PyPI**: ✅ **Successfully Published!**
+- **Package URL**: https://pypi.org/project/pyodbc-mcp-server/
+- **Version**: 0.4.0
+- **Published**: 2026-01-03 via GitHub Actions workflow
+- **Installation**: `pip install pyodbc-mcp-server`
 
 ### Why Trusted Publishing?
 
@@ -72,104 +74,6 @@ GitHub's trusted publishing is **more secure** than API tokens:
 - ✅ No tokens that can be leaked
 - ✅ Automatic authentication via OIDC
 - ✅ Per-repository, per-workflow permissions
-
----
-
-## 📋 Final Step: Production PyPI Publishing
-
-### Configure Production PyPI Trusted Publishing
-
-**Test PyPI is complete ✅ - Only production PyPI configuration remains.**
-
-#### Configure Production PyPI Trusted Publishing
-
-1. Go to https://pypi.org/manage/account/publishing/
-2. Click "Add a new pending publisher"
-3. Fill in the form:
-   - **PyPI Project Name**: `pyodbc-mcp-server`
-   - **Owner**: `jjones-wps`
-   - **Repository name**: `pyodbc-mcp-server`
-   - **Workflow name**: `release.yml`
-   - **Environment name**: `pypi`
-4. Click "Add"
-
-#### Re-trigger the Workflow
-
-After configuring production PyPI trusted publishing, simply delete and recreate the v0.4.0 tag:
-
-```bash
-git push origin :refs/tags/v0.4.0
-git tag -d v0.4.0
-git tag -a v0.4.0 -m "Release v0.4.0: Production Readiness"
-git push origin v0.4.0
-```
-
-The workflow will automatically publish to production PyPI.
-
-#### Verify Production Publication
-
-After the workflow completes:
-- ✅ **Test PyPI**: https://test.pypi.org/project/pyodbc-mcp-server/ (Already published!)
-- ⏳ **Production PyPI**: https://pypi.org/project/pyodbc-mcp-server/ (Will be published after configuration)
-
----
-
-### Option 2: Manual Upload with API Tokens (Less Secure)
-
-**Only use this if you cannot configure trusted publishing.**
-
-#### Prerequisites
-- API tokens from SECURITY_MITIGATION_COMPLETE.md need to be revoked and regenerated
-- New tokens must be added to GitHub Secrets
-
-#### Steps
-
-1. **Generate New Tokens**:
-   - Test PyPI: https://test.pypi.org/manage/account/token/
-   - Production PyPI: https://pypi.org/manage/account/token/
-
-2. **Test Upload** (from local machine):
-   ```bash
-   source .venv/bin/activate
-   python -m twine upload --repository testpypi dist/*
-   # Enter Test PyPI token when prompted
-   ```
-
-3. **Verify Test PyPI**:
-   - Check https://test.pypi.org/project/pyodbc-mcp-server/
-
-4. **Production Upload**:
-   ```bash
-   python -m twine upload dist/*
-   # Enter Production PyPI token when prompted
-   ```
-
-5. **Verify Production PyPI**:
-   - Check https://pypi.org/project/pyodbc-mcp-server/
-
----
-
-### Option 3: Wait and Publish Later
-
-The build artifacts are already attached to the GitHub release. You can:
-- Download them from https://github.com/jjones-wps/pyodbc-mcp-server/releases/tag/v0.4.0
-- Upload to PyPI manually whenever ready
-- Use the local `dist/` directory files
-
----
-
-## 🎯 Recommendation
-
-**Use Option 1: Configure Trusted Publishing**
-
-Why?
-- ✅ Most secure (no API tokens)
-- ✅ Automated (runs on every tag push)
-- ✅ No manual steps after initial setup
-- ✅ Industry best practice
-- ✅ Easy to audit and revoke
-
-The one-time setup (5 minutes) is worth the long-term security and automation benefits.
 
 ---
 
@@ -183,12 +87,13 @@ The one-time setup (5 minutes) is worth the long-term security and automation be
 | CHANGELOG | ✅ | Updated with v0.4.0 entry |
 | Version Bump | ✅ | pyproject.toml updated to 0.4.0 |
 | Workflow Updated | ✅ | PyPI publishing jobs added and tested |
-| Workflow Re-triggered | ✅ | v0.4.0 tag recreated, workflow executed |
-| Build Job | ✅ | Package built successfully |
-| GitHub Release Job | ✅ | Release updated with artifacts |
-| Test PyPI Publishing | ✅ | **Package published successfully!** |
+| Workflow Final Run | ✅ | All jobs succeeded (workflow run 20670562025) |
+| Build Job | ✅ | Package built successfully (12s) |
+| GitHub Release Job | ✅ | Release updated with artifacts (6s) |
+| Test PyPI Publishing | ✅ | Package published successfully (14s) |
 | Test PyPI URL | ✅ | https://test.pypi.org/project/pyodbc-mcp-server/ |
-| Production PyPI Job | ⏳ | Ready, awaiting trusted publishing config |
+| Production PyPI Publishing | ✅ | **Package published successfully! (17s)** |
+| Production PyPI URL | ✅ | **https://pypi.org/project/pyodbc-mcp-server/** |
 
 ---
 
@@ -202,9 +107,9 @@ The one-time setup (5 minutes) is worth the long-term security and automation be
 
 ---
 
-**Last Updated**: 2026-01-03 01:45 UTC
-**Status**: ✅ Test PyPI published! Production PyPI ready after configuration.
-**Next Action**: Configure GitHub trusted publishing on Production PyPI only (5-minute setup)
+**Last Updated**: 2026-01-03 01:55 UTC
+**Status**: ✅ **RELEASE COMPLETE** - All publishing targets successful!
+**Next Action**: None - Release is complete. Package is live on PyPI!
 
 ---
 
@@ -230,13 +135,25 @@ pyodbc-mcp-server --help
 
 ---
 
-## 🚀 What Happens After Production PyPI Configuration
+## 🎉 Production PyPI Success
 
-Once you configure GitHub as a trusted publisher on PyPI (5-minute setup):
+The package is now available on **production PyPI**! Users can install it with:
+
+```bash
+pip install pyodbc-mcp-server
+```
+
+**Production PyPI Package**: https://pypi.org/project/pyodbc-mcp-server/0.4.0/
+
+---
+
+## 🚀 Future Releases - Fully Automated
+
+Now that GitHub trusted publishing is configured for both Test PyPI and Production PyPI, all future releases are **fully automated**:
 
 1. **Automatic Publishing**: Simply push a new version tag (e.g., `v0.4.1`, `v0.5.0`) and the workflow will:
    - Build the package
-   - Create a GitHub release
+   - Create a GitHub release with artifacts
    - Publish to Test PyPI automatically
    - Publish to Production PyPI automatically (after Test PyPI succeeds)
 
@@ -246,4 +163,4 @@ Once you configure GitHub as a trusted publisher on PyPI (5-minute setup):
 
 4. **Auditable**: Every publication is tied to a specific git tag and workflow run
 
-This one-time configuration enables fully automated releases for all future versions.
+The one-time trusted publishing configuration is complete and will work for all future versions.
